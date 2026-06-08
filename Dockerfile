@@ -16,4 +16,4 @@ EXPOSE 5055
 
 USER appuser
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5055", "--workers", "2", "--access-logfile", "-", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5055", "--workers", "1", "--access-logfile", "-", "app:app"]
