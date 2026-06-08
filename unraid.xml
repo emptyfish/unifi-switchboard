@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>unifi-switchboard</Name>
+  <Repository>ghcr.io/emptyfish/unifi-switchboard:latest</Repository>
+  <Registry/>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Overview>UniFi Switchboard — Lightweight web UI to enable and disable UniFi zone-based firewall policies from any browser on your LAN. Targets the UCG-Max (firmware 10.x) firewall-policies API. Log in with your APP_PASSWORD and toggle your custom rules on or off instantly. Only user-created policies are shown; system defaults are hidden.</Overview>
+  <Category>Network:Management Productivity:</Category>
+  <WebUI>http://[IP]:[PORT:5055]/</WebUI>
+  <!-- Update this URL after pushing to GitHub: https://raw.githubusercontent.com/YOUR_USER/unifi-switchboard/main/icon.svg -->
+  <Icon></Icon>
+  <ExtraParams>--no-healthcheck</ExtraParams>
+  <Changes>
+### 1.0.0
+- Initial release
+- Zone-based firewall policy toggling via UniFi firewall-policies API
+- Password-protected web UI with 8-hour sessions
+- Filters to user-created policies only (hides predefined system rules)
+- Security headers, timing-safe password comparison, input validation
+  </Changes>
+  <Config Name="Port" Target="5055" Default="5055" Mode="tcp" Description="Port to access the UniFi Switchboard web UI" Type="Port" Display="always" Required="true" Mask="false">5055</Config>
+  <Config Name="UNIFI_URL" Target="UNIFI_URL" Default="https://192.168.1.1" Mode="" Description="Base URL of your UniFi Cloud Gateway — no trailing slash (e.g. https://192.168.1.1)" Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="UNIFI_USERNAME" Target="UNIFI_USERNAME" Default="admin" Mode="" Description="UniFi admin username" Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="UNIFI_PASSWORD" Target="UNIFI_PASSWORD" Default="" Mode="" Description="UniFi admin password" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="APP_PASSWORD" Target="APP_PASSWORD" Default="" Mode="" Description="Password used to log into this web UI" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="SECRET_KEY" Target="SECRET_KEY" Default="" Mode="" Description="Random secret for Flask sessions. Generate one with: python3 -c &quot;import secrets; print(secrets.token_hex(32))&quot;" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+</Container>

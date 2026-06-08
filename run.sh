@@ -1,0 +1,1 @@
+export $(cat .env | xargs) && .venv/bin/python app.py

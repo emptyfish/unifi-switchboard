@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UniFi Switchboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0e14;
+      --surface: #111820;
+      --surface2: #162030;
+      --border: #1e2d3d;
+      --accent: #00d4ff;
+      --accent-dim: rgba(0,212,255,0.10);
+      --green: #a6e3a1;
+      --green-dim: rgba(166,227,161,0.12);
+      --red: #f38ba8;
+      --red-dim: rgba(243,139,168,0.12);
+      --yellow: #f9e2af;
+      --text: #cdd6f4;
+      --muted: #6b7fa3;
+      --mono: 'JetBrains Mono', monospace;
+      --display: 'Syne', sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+      min-height: 100vh;
+      background-image:
+        radial-gradient(ellipse 80% 30% at 50% 0%, rgba(0,212,255,0.05) 0%, transparent 70%);
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: rgba(10,14,20,0.92);
+      backdrop-filter: blur(12px);
+      z-index: 10;
+    }
+
+    .brand {
+      font-family: var(--display);
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: var(--accent);
+      letter-spacing: -0.02em;
+    }
+
+    .brand span {
+      font-weight: 700;
+      color: var(--muted);
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      margin-left: 0.75rem;
+      text-transform: uppercase;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+    }
+
+    #status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.7rem;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+    }
+    .dot.connected { background: var(--green); box-shadow: 0 0 8px var(--green); }
+    .dot.error { background: var(--red); }
+
+    .logout {
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-decoration: none;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      transition: color 0.2s;
+    }
+    .logout:hover { color: var(--text); }
+
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    .section-label {
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #rules-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .rule-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      transition: border-color 0.2s, background 0.2s;
+      animation: fadeIn 0.3s ease both;
+    }
+
+    .rule-card:hover {
+      border-color: #2a3f57;
+      background: var(--surface2);
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .rule-info { flex: 1; min-width: 0; }
+
+    .rule-name {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 0.2rem;
+    }
+
+    .rule-meta {
+      font-size: 0.68rem;
+      color: var(--muted);
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    .badge {
+      padding: 0.15rem 0.5rem;
+      border-radius: 2px;
+      font-size: 0.62rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+
+    .badge-block { background: var(--red-dim); color: var(--red); }
+    .badge-allow { background: var(--green-dim); color: var(--green); }
+
+    /* Toggle switch */
+    .toggle-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-shrink: 0;
+    }
+
+    .toggle-label {
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      width: 3rem;
+      text-align: right;
+      transition: color 0.2s;
+    }
+
+    .toggle {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+
+    .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+
+    .slider {
+      position: absolute;
+      inset: 0;
+      background: var(--border);
+      border-radius: 24px;
+      cursor: pointer;
+      transition: background 0.25s;
+    }
+
+    .slider::before {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      left: 4px;
+      top: 4px;
+      background: var(--muted);
+      border-radius: 50%;
+      transition: transform 0.25s, background 0.25s;
+    }
+
+    .toggle input:checked + .slider {
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+    }
+
+    .toggle input:checked + .slider::before {
+      transform: translateX(20px);
+      background: var(--accent);
+    }
+
+    .toggle.loading .slider { opacity: 0.5; pointer-events: none; }
+
+    .rule-card.updating {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+
+    /* Skeleton loader */
+    .skeleton {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1rem 1.25rem;
+      height: 62px;
+      position: relative;
+      overflow: hidden;
+    }
+    .skeleton::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.03) 50%, transparent 100%);
+      animation: shimmer 1.4s infinite;
+    }
+    @keyframes shimmer {
+      from { transform: translateX(-100%); }
+      to   { transform: translateX(100%); }
+    }
+
+    .error-msg {
+      background: var(--red-dim);
+      border: 1px solid rgba(243,139,168,0.25);
+      border-radius: 4px;
+      padding: 1rem 1.25rem;
+      color: var(--red);
+      font-size: 0.8rem;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.75rem 1.1rem;
+      font-size: 0.78rem;
+      color: var(--text);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      transform: translateY(20px);
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 100;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.success { border-color: rgba(166,227,161,0.3); color: var(--green); }
+    .toast.fail    { border-color: rgba(243,139,168,0.3); color: var(--red); }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <span class="brand">Switchboard<span>UniFi Firewall</span></span>
+    </div>
+    <div class="header-right">
+      <div id="status-indicator">
+        <div class="dot" id="dot"></div>
+        <span id="status-text">Connecting…</span>
+      </div>
+      <a href="/logout" class="logout">Logout</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="section-label">Traffic Rules</div>
+    <div id="rules-container">
+      <div class="skeleton"></div>
+      <div class="skeleton" style="animation-delay:.07s"></div>
+      <div class="skeleton" style="animation-delay:.14s"></div>
+    </div>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const container = document.getElementById('rules-container');
+    const dot = document.getElementById('dot');
+    const statusText = document.getElementById('status-text');
+    const toast = document.getElementById('toast');
+    let toastTimer;
+
+    function showToast(msg, type = 'success') {
+      clearTimeout(toastTimer);
+      toast.textContent = msg;
+      toast.className = `toast show ${type}`;
+      toastTimer = setTimeout(() => toast.className = 'toast', 2800);
+    }
+
+    function setStatus(connected, msg) {
+      dot.className = `dot ${connected ? 'connected' : 'error'}`;
+      statusText.textContent = msg;
+    }
+
+    async function loadRules() {
+      try {
+        const res = await fetch('/api/rules');
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error);
+
+        setStatus(true, 'Connected');
+
+        container.innerHTML = '';
+        data.rules.forEach((rule, i) => {
+          const isBlock = rule.action.toLowerCase().includes('block');
+
+          const name = document.createElement('div');
+          name.className = 'rule-name';
+          name.textContent = rule.description;
+
+          const badge = document.createElement('span');
+          badge.className = `badge ${isBlock ? 'badge-block' : 'badge-allow'}`;
+          badge.textContent = isBlock ? 'Block' : 'Allow';
+
+          const sched = document.createElement('span');
+          sched.textContent = rule.schedule === 'always' ? 'Always active' : rule.schedule;
+
+          const meta = document.createElement('div');
+          meta.className = 'rule-meta';
+          meta.appendChild(badge);
+          meta.appendChild(sched);
+
+          const info = document.createElement('div');
+          info.className = 'rule-info';
+          info.appendChild(name);
+          info.appendChild(meta);
+
+          const lbl = document.createElement('span');
+          lbl.className = 'toggle-label';
+          lbl.id = `lbl-${rule.id}`;
+          lbl.textContent = rule.enabled ? 'On' : 'Off';
+
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.checked = rule.enabled;
+          checkbox.addEventListener('change', () => toggle(rule.id, checkbox));
+
+          const slider = document.createElement('span');
+          slider.className = 'slider';
+
+          const togLabel = document.createElement('label');
+          togLabel.className = 'toggle';
+          togLabel.id = `tog-${rule.id}`;
+          togLabel.appendChild(checkbox);
+          togLabel.appendChild(slider);
+
+          const wrap = document.createElement('div');
+          wrap.className = 'toggle-wrap';
+          wrap.appendChild(lbl);
+          wrap.appendChild(togLabel);
+
+          const card = document.createElement('div');
+          card.className = 'rule-card';
+          card.style.animationDelay = `${i * 0.05}s`;
+          card.dataset.id = rule.id;
+          card.appendChild(info);
+          card.appendChild(wrap);
+
+          container.appendChild(card);
+        });
+      } catch (e) {
+        setStatus(false, 'Error');
+        const errEl = document.createElement('div');
+        errEl.className = 'error-msg';
+        errEl.textContent = `Failed to load rules: ${e.message}`;
+        container.innerHTML = '';
+        container.appendChild(errEl);
+      }
+    }
+
+    async function toggle(ruleId, checkbox) {
+      const card = checkbox.closest('.rule-card');
+      const lbl = document.getElementById(`lbl-${ruleId}`);
+      const enabled = checkbox.checked;
+
+      card.classList.add('updating');
+
+      try {
+        const res = await fetch(`/api/rules/${ruleId}/toggle`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error);
+
+        lbl.textContent = enabled ? 'On' : 'Off';
+        showToast(`Rule ${enabled ? 'enabled' : 'disabled'}`, 'success');
+      } catch (e) {
+        checkbox.checked = !enabled; // revert
+        lbl.textContent = !enabled ? 'On' : 'Off';
+        showToast(`Failed: ${e.message}`, 'fail');
+      } finally {
+        card.classList.remove('updating');
+      }
+    }
+
+    loadRules();
+  </script>
+</body>
+</html>

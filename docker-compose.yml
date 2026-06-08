@@ -1,0 +1,14 @@
+services:
+  unifi-switchboard:
+    build: .
+    container_name: unifi-switchboard
+    restart: unless-stopped
+    ports:
+      - "5055:5055"
+    environment:
+      - UNIFI_URL=https://your-unifi-url
+      - UNIFI_USERNAME=your-unifi-username
+      - UNIFI_PASSWORD=your-unifi-password       # ← UniFi admin password
+      - APP_PASSWORD=created-app-password          # ← password to log into this app
+      - SECRET_KEY=replace-with-random-string  # ← run: python3 -c "import secrets; print(secrets.token_hex(32))"
+    network_mode: bridge
