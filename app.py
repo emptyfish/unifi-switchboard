@@ -10,7 +10,6 @@ from flask import Flask, render_template, jsonify, request, session, redirect, u
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from functools import wraps
-from datetime import timedelta
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -49,7 +48,6 @@ if not _validate_url(UNIFI_URL):
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
-app.permanent_session_lifetime = timedelta(hours=8)
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Strict",
@@ -142,7 +140,6 @@ def login():
             error = "Incorrect password"
         elif hmac.compare_digest(submitted, APP_PASSWORD):
             session.clear()  # prevent session fixation
-            session.permanent = True
             session["logged_in"] = True
             log.info("login success addr=%s", request.remote_addr)
             return redirect(url_for("index"))
