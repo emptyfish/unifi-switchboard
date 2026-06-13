@@ -402,33 +402,7 @@ def api_debug_zones():
 @app.route("/api/debug/policy-ordering")
 @login_required
 def api_debug_policy_ordering():
-    s = get_unifi_session()
     results = {}
-
-    # Discover the v1 site ID (may differ from legacy "default")
-    site_ids = [UNIFI_SITE]
-    try:
-        sites_data = _fetch_json(s, "/proxy/network/v1/api/sites")
-        if isinstance(sites_data, list):
-            for site in sites_data:
-                sid = site.get("id") or site.get("_id") or site.get("name")
-                if sid and sid not in site_ids:
-                    site_ids.append(sid)
-        results["_sites"] = sites_data
-    except Exception as exc:
-        results["_sites"] = {"error": str(exc)}
-
-    for site_id in site_ids:
-        for path in [
-            f"/proxy/network/v2/api/site/{site_id}/firewall/policies/ordering",
-            f"/proxy/network/v2/api/site/{site_id}/firewall-policies/ordering",
-            f"/proxy/network/integration/v1/sites/{site_id}/firewall/policies/ordering",
-            f"/proxy/network/v1/sites/{site_id}/firewall/policies/ordering",
-        ]:
-            try:
-                results[path] = _fetch_json(s, path)
-            except Exception as exc:
-                results[path] = {"error": str(exc)}
 
     if UNIFI_API_KEY:
         try:
@@ -438,8 +412,7 @@ def api_debug_policy_ordering():
             results["resolved_site_id"] = site_id
             if site_id:
                 # Fetch ordering for all zone pairs found in current policies
-                s2 = get_unifi_session()
-                policies = get_firewall_policies(s2)
+                policies = get_firewall_policies(get_unifi_session())
                 seen = set()
                 zone_pairs = []
                 for p in policies:
