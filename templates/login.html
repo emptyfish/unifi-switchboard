@@ -127,9 +127,9 @@
     {% if error %}
     <div class="error">{{ error }}</div>
     {% endif %}
-    <form method="POST">
+    <form method="POST" autocomplete="off">
       <label for="password">Access Key</label>
-      <input type="password" id="password" name="password" autofocus autocomplete="current-password">
+      <input type="password" id="password" name="password" autofocus autocomplete="off">
       <button type="submit">Authenticate →</button>
     </form>
   </div>
