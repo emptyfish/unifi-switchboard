@@ -406,13 +406,14 @@ def api_debug_policy_ordering():
 
     if UNIFI_API_KEY:
         try:
+            s = get_unifi_session()
             integration_sites = _integration_get("/sites")
             results["integration_sites"] = integration_sites
             site_id = _get_integration_site_id()
             results["resolved_site_id"] = site_id
             if site_id:
                 # Fetch ordering for all zone pairs found in current policies
-                policies = get_firewall_policies(get_unifi_session())
+                policies = get_firewall_policies(s)
                 seen = set()
                 zone_pairs = []
                 for p in policies:
