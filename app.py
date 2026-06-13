@@ -289,6 +289,11 @@ def health():
     return jsonify({"ok": True})
 
 
+@app.route("/robots.txt")
+def robots():
+    return "User-agent: *\nDisallow: /\n", 200, {"Content-Type": "text/plain"}
+
+
 @app.route("/api/debug/raw-policies")
 @login_required
 def api_debug_raw_policies():

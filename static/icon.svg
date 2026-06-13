@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <rect width="100" height="100" rx="18" fill="#0a0e14"/>
+  <!-- Shield outline -->
+  <path d="M50 14 L76 24 L76 50 C76 65 64 76 50 83 C36 76 24 65 24 50 L24 24 Z"
+        fill="none" stroke="#00d4ff" stroke-width="3.5" stroke-linejoin="round"/>
+  <!-- Toggle/power symbol -->
+  <path d="M50 36 L50 50" stroke="#00d4ff" stroke-width="4" stroke-linecap="round"/>
+  <path d="M40 41 A13 13 0 1 0 60 41" fill="none" stroke="#00d4ff" stroke-width="4" stroke-linecap="round"/>
+</svg>
