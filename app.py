@@ -423,6 +423,17 @@ def api_debug_policy_ordering():
                     if src and dst and (src, dst) not in seen:
                         seen.add((src, dst))
                         zone_pairs.append((src, dst))
+                # Discover integration API zone IDs (different format from v2 API)
+                for zones_path in [
+                    f"/sites/{site_id}/firewall/zones",
+                    f"/sites/{site_id}/zones",
+                    f"/sites/{site_id}/firewall-zones",
+                ]:
+                    try:
+                        results[f"integration:{zones_path}"] = _integration_get(zones_path)
+                    except Exception as exc:
+                        results[f"integration:{zones_path}"] = {"error": str(exc)}
+
                 pair_results = {}
                 for src, dst in zone_pairs:
                     url = (
