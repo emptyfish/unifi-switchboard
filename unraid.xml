@@ -9,8 +9,7 @@
   <Overview>UniFi Switchboard — Lightweight web UI to enable and disable UniFi zone-based firewall policies from any browser on your LAN. Targets the UCG-Max (firmware 10.x) firewall-policies API. Log in with your APP_PASSWORD and toggle your custom rules on or off instantly. Only user-created policies are shown; system defaults are hidden.</Overview>
   <Category>Network:Management Productivity:</Category>
   <WebUI>http://[IP]:[PORT:5055]/</WebUI>
-  <!-- Update this URL after pushing to GitHub: https://raw.githubusercontent.com/YOUR_USER/unifi-switchboard/main/icon.svg -->
-  <Icon></Icon>
+  <Icon>https://raw.githubusercontent.com/emptyfish/unifi-switchboard/main/icon.svg</Icon>
   <ExtraParams>--no-healthcheck</ExtraParams>
   <Changes>
 ### 1.0.0

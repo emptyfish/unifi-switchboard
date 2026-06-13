@@ -87,6 +87,7 @@ All configuration is via environment variables — no config files.
 | `UNIFI_PASSWORD` | Yes | UniFi admin password (min 8 chars) |
 | `APP_PASSWORD` | Yes | Password to log into this web UI (min 8 chars) |
 | `SECRET_KEY` | Yes | Random string for session encryption (min 32 chars) |
+| `TRUST_PROXY` | No | Set `true` when running behind Cloudflare Tunnel or a reverse proxy — enables `ProxyFix` and the `Secure` cookie flag |
 
 ---
 
@@ -94,7 +95,7 @@ All configuration is via environment variables — no config files.
 
 Import `unraid.xml` as a custom template in the Docker tab, or configure a new container manually:
 
-- **Repository:** your registry or `ghcr.io/YOUR_USER/unifi-switchboard:latest`
+- **Repository:** `ghcr.io/emptyfish/unifi-switchboard:latest`
 - **Port:** `5055`
 - **Environment variables:** as above — no volume mounts needed
 
@@ -111,7 +112,7 @@ ingress:
   - service: http_status:404
 ```
 
-When behind HTTPS (Cloudflare or otherwise), set `SESSION_COOKIE_SECURE=true` in your environment.
+When behind HTTPS (Cloudflare or otherwise), set `TRUST_PROXY=true` in your environment.
 
 ---
 
@@ -120,7 +121,7 @@ When behind HTTPS (Cloudflare or otherwise), set `SESSION_COOKIE_SECURE=true` in
 - Passwords compared with `hmac.compare_digest` (timing-safe)
 - Rate limiting: 10 login attempts/min, 60 rule fetches/min, 30 toggles/min
 - Security headers: `X-Frame-Options`, `X-Content-Type-Options`, `CSP`, `Referrer-Policy`, `Permissions-Policy`
-- Sessions: `HttpOnly`, `SameSite=Strict`, 8-hour lifetime
+- Sessions: `HttpOnly`, `SameSite=Strict`, expires on browser close
 - All credentials are environment variables — nothing written to disk
 - Container runs as non-root (`uid 1000`)
 - Served by Gunicorn in production
