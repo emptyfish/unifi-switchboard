@@ -452,13 +452,25 @@ def api_debug_policy_ordering():
                         zone_pairs.append((src, dst))
                 pair_results = {}
                 for src, dst in zone_pairs:
+                    url = (
+                        f"{UNIFI_URL}/proxy/network/integration/v1/sites/{site_id}"
+                        f"/firewall/policies/ordering"
+                        f"?sourceFirewallZoneId={src}&destinationFirewallZoneId={dst}"
+                    )
+                    r2 = requests.get(
+                        url,
+                        headers={"X-API-Key": UNIFI_API_KEY, "Accept": "application/json"},
+                        verify=False,
+                        timeout=10,
+                    )
                     try:
-                        pair_results[f"{src[-6:]}→{dst[-6:]}"] = _integration_get(
-                            f"/sites/{site_id}/firewall/policies/ordering"
-                            f"?sourceFirewallZoneId={src}&destinationFirewallZoneId={dst}"
-                        )
-                    except Exception as exc:
-                        pair_results[f"{src[-6:]}→{dst[-6:]}"] = {"error": str(exc)}
+                        body = r2.json()
+                    except Exception:
+                        body = r2.text
+                    pair_results[f"{src[-6:]}→{dst[-6:]}"] = {
+                        "status": r2.status_code,
+                        "body": body,
+                    }
                 results["integration_ordering"] = pair_results
         except Exception as exc:
             results["integration_error"] = str(exc)
