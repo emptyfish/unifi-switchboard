@@ -88,7 +88,7 @@ All configuration is via environment variables — no config files.
 | `APP_PASSWORD` | Yes | Password to log into this web UI (min 8 chars) |
 | `SECRET_KEY` | Yes | Random string for session encryption (min 32 chars) |
 | `UNIFI_SITE` | No | UniFi site name (default: `default`). Change if you use multiple sites or a custom site name |
-| `UNIFI_API_KEY` | No | Local UniFi API key — enables correct rule evaluation order. Generate in Network → Settings → API Keys |
+| `UNIFI_API_KEY` | No | Local UniFi API key — enables correct rule evaluation order. Generate in Network → Integrations → API Keys |
 | `TRUST_PROXY` | No | Set `true` when running behind Cloudflare Tunnel or a reverse proxy — enables `ProxyFix` and the `Secure` cookie flag |
 
 ---
