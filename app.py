@@ -156,34 +156,112 @@ def _get_integration_site_id():
     return None
 
 
-def get_policy_ordering(zone_pairs):
+def _build_v2_to_integration_zone_map(s, site_id):
+    """Returns {v2_zone_hex_id: integration_zone_uuid}."""
+    try:
+        nc_entries = _fetch_json(s, f"/proxy/network/api/s/{UNIFI_SITE}/rest/networkconf")
+        int_zones = _integration_get(f"/sites/{site_id}/firewall/zones")
+        int_networks = _integration_get(f"/sites/{site_id}/networks")
+    except Exception as exc:
+        log.warning("zone map: %s", exc)
+        return {}
+
+    int_net_name_to_zone = {n["name"]: n.get("zoneId") for n in int_networks if "name" in n}
+    int_zone_name_to_uuid = {z["name"]: z["id"] for z in int_zones if "name" in z and "id" in z}
+
+    nc_by_zone: dict[str, list] = {}
+    for nc in nc_entries:
+        v2_zid = nc.get("firewall_zone_id")
+        if v2_zid:
+            nc_by_zone.setdefault(v2_zid, []).append(nc)
+
+    result = {}
+    for v2_zid, nets in nc_by_zone.items():
+        if all(n.get("purpose") == "wan" for n in nets):
+            uuid = int_zone_name_to_uuid.get("External")
+            if uuid:
+                result[v2_zid] = uuid
+        else:
+            for nc in nets:
+                uuid = int_net_name_to_zone.get(nc.get("name", ""))
+                if uuid:
+                    result[v2_zid] = uuid
+                    break
+    return result
+
+
+def get_policy_ordering(v2_policies, zone_pairs, s):
+    """Returns {v2_policy_id: position} for display-order sorting.
+
+    Calls the integration API ordering endpoint per zone pair using correct
+    integration zone UUIDs. Policies without an integration ID (nulls in the
+    ordering response) fall back to their index value in the sort key, which
+    keeps them after explicitly-positioned policies since index starts at 10000+.
+    """
     if not UNIFI_API_KEY or not zone_pairs:
         return {}
     try:
         site_id = _get_integration_site_id()
         if not site_id:
-            log.warning("policy ordering: could not resolve integration site ID")
             return {}
+
+        zone_map = _build_v2_to_integration_zone_map(s, site_id)
+
+        # Build integration policy UUID → v2 _id via policy name matching
+        try:
+            int_policies = _integration_get(f"/sites/{site_id}/firewall/policies")
+        except Exception as exc:
+            log.warning("integration policies fetch failed: %s", exc)
+            int_policies = []
+        int_name_to_uuid = {
+            p["name"]: p["id"]
+            for p in (int_policies if isinstance(int_policies, list) else [])
+            if p.get("name") and p.get("id")
+        }
+        int_uuid_to_v2_id = {
+            int_uuid: p["_id"]
+            for p in v2_policies
+            if p.get("name") and p.get("_id")
+            for int_uuid in [int_name_to_uuid.get(p["name"])]
+            if int_uuid
+        }
+
         ordering = {}
-        for src_zone_id, dst_zone_id in zone_pairs:
+        for src_v2, dst_v2 in zone_pairs:
+            int_src = zone_map.get(src_v2)
+            int_dst = zone_map.get(dst_v2)
+            if not int_src or not int_dst:
+                log.warning("no integration zone UUID for v2 pair %s->%s", src_v2, dst_v2)
+                continue
             try:
                 data = _integration_get(
                     f"/sites/{site_id}/firewall/policies/ordering"
-                    f"?sourceFirewallZoneId={src_zone_id}&destinationFirewallZoneId={dst_zone_id}"
+                    f"?sourceFirewallZoneId={int_src}&destinationFirewallZoneId={int_dst}"
                 )
-                if isinstance(data, list):
+                if isinstance(data, dict) and "orderedFirewallPolicyIds" in data:
+                    ordered = data["orderedFirewallPolicyIds"]
+                    ids_in_order = (
+                        (ordered.get("beforeSystemDefined") or []) +
+                        (ordered.get("afterSystemDefined") or [])
+                    )
+                    for pos, int_pid in enumerate(ids_in_order):
+                        if int_pid is not None:
+                            v2_id = int_uuid_to_v2_id.get(int_pid)
+                            if v2_id:
+                                ordering[v2_id] = pos
+                elif isinstance(data, list):
                     for pos, item in enumerate(data):
-                        if isinstance(item, str):
-                            ordering[item] = pos
-                        elif isinstance(item, dict):
-                            pid = item.get("id") or item.get("_id") or item.get("policyId")
-                            if pid:
-                                ordering[pid] = item.get("order", pos)
+                        pid = item if isinstance(item, str) else (
+                            item.get("id") or item.get("_id") if isinstance(item, dict) else None
+                        )
+                        if pid:
+                            v2_id = int_uuid_to_v2_id.get(pid, pid)
+                            ordering[v2_id] = pos
             except Exception as exc:
-                log.warning("ordering fetch failed for pair %s->%s: %s", src_zone_id, dst_zone_id, exc)
+                log.warning("ordering fetch failed for %s->%s: %s", int_src, int_dst, exc)
         return ordering
     except Exception as exc:
-        log.warning("policy ordering fetch failed: %s", exc)
+        log.warning("policy ordering failed: %s", exc)
         return {}
 
 
@@ -330,7 +408,7 @@ def api_rules():
                 "index": p.get("index", 0),
             })
 
-        ordering = get_policy_ordering(group_order)
+        ordering = get_policy_ordering(policies, group_order, s)
 
         groups = []
         for key in group_order:
@@ -407,14 +485,11 @@ def api_debug_policy_ordering():
     if UNIFI_API_KEY:
         try:
             s = get_unifi_session()
-            integration_sites = _integration_get("/sites")
-            results["integration_sites"] = integration_sites
             site_id = _get_integration_site_id()
             results["resolved_site_id"] = site_id
             if site_id:
-                # Fetch ordering for all zone pairs found in current policies
                 policies = get_firewall_policies(s)
-                seen = set()
+                seen: set = set()
                 zone_pairs = []
                 for p in policies:
                     if p.get("predefined") is not False:
@@ -424,47 +499,21 @@ def api_debug_policy_ordering():
                     if src and dst and (src, dst) not in seen:
                         seen.add((src, dst))
                         zone_pairs.append((src, dst))
-                # Discover integration API zone IDs and network/policy mappings
-                for zones_path in [
-                    f"/sites/{site_id}/firewall/zones",
-                    f"/sites/{site_id}/networks",
-                    f"/sites/{site_id}/firewall/policies",
-                ]:
-                    try:
-                        results[f"integration:{zones_path}"] = _integration_get(zones_path)
-                    except Exception as exc:
-                        results[f"integration:{zones_path}"] = {"error": str(exc)}
 
-                # Build v2 zone ID → integration zone UUID map via network name matching
-                int_networks = _integration_get(f"/sites/{site_id}/networks")
+                zone_map = _build_v2_to_integration_zone_map(s, site_id)
+                results["v2_to_integration_zone_map"] = zone_map
+
                 int_zones = _integration_get(f"/sites/{site_id}/firewall/zones")
-                # network_uuid → zone_uuid
-                net_to_zone = {n["id"]: n["zoneId"] for n in int_networks if "id" in n and "zoneId" in n}
-                # zone_uuid → zone name
                 zone_uuid_to_name = {z["id"]: z["name"] for z in int_zones if "id" in z}
-
-                # networkconf: v2 network _id → firewall_zone_id
-                nc_entries = _fetch_json(s, f"/proxy/network/api/s/{UNIFI_SITE}/rest/networkconf")
-                # Match networkconf entries to integration networks by name
-                # integration network name → zone_uuid
-                int_net_name_to_zone = {n["name"]: n.get("zoneId") for n in int_networks if "name" in n}
-                # v2 firewall_zone_id → integration zone UUID
-                v2_to_int_zone = {}
-                for nc in nc_entries:
-                    v2_zid = nc.get("firewall_zone_id")
-                    name = nc.get("name", "")
-                    int_zone_uuid = int_net_name_to_zone.get(name)
-                    if v2_zid and int_zone_uuid and v2_zid not in v2_to_int_zone:
-                        v2_to_int_zone[v2_zid] = int_zone_uuid
-
-                results["v2_to_integration_zone_map"] = {
-                    k: f"{v} ({zone_uuid_to_name.get(v, '?')})" for k, v in v2_to_int_zone.items()
-                }
 
                 pair_results = {}
                 for src, dst in zone_pairs:
-                    int_src = v2_to_int_zone.get(src, src)
-                    int_dst = v2_to_int_zone.get(dst, dst)
+                    int_src = zone_map.get(src)
+                    int_dst = zone_map.get(dst)
+                    if not int_src or not int_dst:
+                        label = f"{src[-6:]}→{dst[-6:]} (unmapped)"
+                        pair_results[label] = {"error": "zone not in map"}
+                        continue
                     url = (
                         f"{UNIFI_URL}/proxy/network/integration/v1/sites/{site_id}"
                         f"/firewall/policies/ordering"
@@ -480,8 +529,12 @@ def api_debug_policy_ordering():
                         body = r2.json()
                     except Exception:
                         body = r2.text
-                    label = f"{zone_uuid_to_name.get(int_src, src[-6:])}→{zone_uuid_to_name.get(int_dst, dst[-6:])}"
-                    pair_results[label] = {"status": r2.status_code, "body": body}
+                    src_name = zone_uuid_to_name.get(int_src, src[-6:])
+                    dst_name = zone_uuid_to_name.get(int_dst, dst[-6:])
+                    pair_results[f"{src_name}→{dst_name}"] = {
+                        "status": r2.status_code,
+                        "body": body,
+                    }
                 results["integration_ordering"] = pair_results
         except Exception as exc:
             results["integration_error"] = str(exc)
