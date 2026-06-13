@@ -42,6 +42,7 @@ TRUST_PROXY    = os.environ.get("TRUST_PROXY", "").lower() in ("1", "true", "yes
 
 UNIFI_URL      = _require_env("UNIFI_URL")
 UNIFI_SITE     = os.environ.get("UNIFI_SITE", "default").strip() or "default"
+UNIFI_API_KEY  = os.environ.get("UNIFI_API_KEY", "").strip()
 UNIFI_USERNAME = _require_env("UNIFI_USERNAME")
 UNIFI_PASSWORD = _require_env("UNIFI_PASSWORD", min_length=8)
 APP_PASSWORD   = _require_env("APP_PASSWORD", min_length=8)
@@ -128,6 +129,37 @@ def _fetch_json(s, path):
     r.raise_for_status()
     data = r.json()
     return data.get("data", data) if isinstance(data, dict) and "data" in data else data
+
+
+def get_policy_ordering():
+    if not UNIFI_API_KEY:
+        return {}
+    try:
+        r = requests.get(
+            f"{UNIFI_URL}/proxy/network/integration/v1/sites/{UNIFI_SITE}/firewall/policies/ordering",
+            headers={"X-API-Key": UNIFI_API_KEY, "Accept": "application/json"},
+            verify=False,
+            timeout=10,
+        )
+        r.raise_for_status()
+        data = r.json()
+        if isinstance(data, dict) and "data" in data:
+            data = data["data"]
+        # Build {policy_id: position} from whatever format is returned
+        ordering = {}
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, str):
+                    ordering[item] = len(ordering)
+                elif isinstance(item, dict):
+                    pid = item.get("id") or item.get("_id") or item.get("policyId")
+                    pos = item.get("order") or item.get("index") or item.get("position") or len(ordering)
+                    if pid:
+                        ordering[pid] = pos
+        return ordering
+    except Exception as exc:
+        log.warning("policy ordering fetch failed: %s", exc)
+        return {}
 
 
 def get_zone_names(s, _policies=None):
@@ -273,13 +305,18 @@ def api_rules():
                 "index": p.get("index", 0),
             })
 
+        ordering = get_policy_ordering()
+
         groups = []
         for key in group_order:
             g = group_map[key]
-            g["rules"].sort(key=lambda r: r["index"])
+            if ordering:
+                g["rules"].sort(key=lambda r: ordering.get(r["id"], r["index"]))
+            else:
+                g["rules"].sort(key=lambda r: r["index"])
             groups.append(g)
 
-        return _no_cache(jsonify({"ok": True, "groups": groups}))
+        return _no_cache(jsonify({"ok": True, "groups": groups, "ordering_active": bool(ordering)}))
     except Exception:
         log.exception("failed to load rules")
         return jsonify({"ok": False, "error": "Failed to load rules"}), 500
@@ -367,6 +404,21 @@ def api_debug_policy_ordering():
                 results[path] = _fetch_json(s, path)
             except Exception as exc:
                 results[path] = {"error": str(exc)}
+
+    if UNIFI_API_KEY:
+        api_path = f"/proxy/network/integration/v1/sites/{UNIFI_SITE}/firewall/policies/ordering"
+        try:
+            r = requests.get(
+                f"{UNIFI_URL}{api_path}",
+                headers={"X-API-Key": UNIFI_API_KEY, "Accept": "application/json"},
+                verify=False,
+                timeout=10,
+            )
+            results[f"api_key:{api_path}"] = r.json()
+        except Exception as exc:
+            results[f"api_key:{api_path}"] = {"error": str(exc)}
+    else:
+        results["_api_key"] = "UNIFI_API_KEY not set"
 
     return _no_cache(jsonify(results))
 
