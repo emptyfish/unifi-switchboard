@@ -237,8 +237,11 @@ def api_rules():
         s = get_unifi_session()
         policies = get_firewall_policies(s)
         zones = get_zone_names(s)
-        clean = []
+
+        group_order = []
+        group_map = {}
         seen_ids = set()
+
         for p in policies:
             if p.get("predefined") is not False:
                 continue
@@ -246,21 +249,36 @@ def api_rules():
             if pid in seen_ids:
                 continue
             seen_ids.add(pid)
-            schedule = p.get("schedule", {})
+
             src_zone_id = p.get("source", {}).get("zone_id", "")
             dst_zone_id = p.get("destination", {}).get("zone_id", "")
-            clean.append({
+            key = (src_zone_id, dst_zone_id)
+
+            src_name = zones.get(src_zone_id) or (src_zone_id[-4:] if src_zone_id else "")
+            dst_name = zones.get(dst_zone_id) or (dst_zone_id[-4:] if dst_zone_id else "")
+            label = src_name if src_name == dst_name else f"{src_name} → {dst_name}"
+
+            if key not in group_map:
+                group_order.append(key)
+                group_map[key] = {"label": label, "rules": []}
+
+            group_map[key]["rules"].append({
                 "id": pid,
                 "description": p.get("name", "Unnamed Policy"),
                 "tooltip": p.get("description", ""),
                 "enabled": p.get("enabled", False),
                 "action": p.get("action", "").capitalize(),
-                "schedule": _format_schedule(schedule),
-                "index": p.get("index", ""),
-                "source_zone": zones.get(src_zone_id) or src_zone_id[-4:] if src_zone_id else "",
-                "dest_zone": zones.get(dst_zone_id) or dst_zone_id[-4:] if dst_zone_id else "",
+                "schedule": _format_schedule(p.get("schedule", {})),
+                "index": p.get("index", 0),
             })
-        return _no_cache(jsonify({"ok": True, "rules": clean}))
+
+        groups = []
+        for key in group_order:
+            g = group_map[key]
+            g["rules"].sort(key=lambda r: r["index"])
+            groups.append(g)
+
+        return _no_cache(jsonify({"ok": True, "groups": groups}))
     except Exception:
         log.exception("failed to load rules")
         return jsonify({"ok": False, "error": "Failed to load rules"}), 500

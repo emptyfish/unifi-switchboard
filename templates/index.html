@@ -212,18 +212,23 @@
       flex-wrap: wrap;
     }
 
-    .rule-zone {
-      font-size: 0.62rem;
-      color: var(--muted);
-      letter-spacing: 0.04em;
-    }
-
-    .rule-id {
+    .rule-position {
       font-size: 0.58rem;
       color: #3a4f66;
       letter-spacing: 0.06em;
       font-family: var(--mono);
     }
+
+    .zone-group-header {
+      font-size: 0.63rem;
+      color: var(--accent);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      padding: 0.5rem 0 0.4rem;
+      border-bottom: 1px solid var(--border);
+      margin-top: 1.25rem;
+    }
+    .zone-group-header:first-child { margin-top: 0; }
 
     .badge {
       padding: 0.15rem 0.5rem;
@@ -596,6 +601,69 @@
       statusText.textContent = msg;
     }
 
+    function buildRuleCard(rule, position, animIdx) {
+      const isBlock = rule.action.toLowerCase().includes('block');
+
+      const name = document.createElement('div');
+      name.className = 'rule-name';
+      name.textContent = rule.description;
+
+      const badge = document.createElement('span');
+      badge.className = `badge ${isBlock ? 'badge-block' : 'badge-allow'}`;
+      badge.textContent = isBlock ? 'Block' : 'Allow';
+
+      const sched = document.createElement('span');
+      sched.textContent = rule.schedule === 'always' ? 'Always active' : rule.schedule;
+
+      const pos = document.createElement('span');
+      pos.className = 'rule-position';
+      pos.textContent = `#${position}`;
+
+      const meta = document.createElement('div');
+      meta.className = 'rule-meta';
+      meta.appendChild(badge);
+      meta.appendChild(sched);
+      meta.appendChild(pos);
+
+      const info = document.createElement('div');
+      info.className = 'rule-info';
+      info.appendChild(name);
+      info.appendChild(meta);
+
+      const lbl = document.createElement('span');
+      lbl.className = 'toggle-label';
+      lbl.id = `lbl-${rule.id}`;
+      lbl.textContent = rule.enabled ? 'On' : 'Off';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = rule.enabled;
+      checkbox.addEventListener('change', () => toggle(rule.id, checkbox));
+
+      const slider = document.createElement('span');
+      slider.className = 'slider';
+
+      const togLabel = document.createElement('label');
+      togLabel.className = 'toggle';
+      togLabel.id = `tog-${rule.id}`;
+      togLabel.appendChild(checkbox);
+      togLabel.appendChild(slider);
+
+      const wrap = document.createElement('div');
+      wrap.className = 'toggle-wrap';
+      wrap.appendChild(lbl);
+      wrap.appendChild(togLabel);
+
+      const card = document.createElement('div');
+      card.className = 'rule-card';
+      card.style.animationDelay = `${animIdx * 0.05}s`;
+      card.dataset.id = rule.id;
+      if (rule.tooltip) card.dataset.tooltip = rule.tooltip;
+      card.appendChild(info);
+      card.appendChild(wrap);
+      return card;
+    }
+
     async function loadRules() {
       try {
         const res = await fetch('/api/rules');
@@ -604,79 +672,19 @@
         if (!data.ok) throw new Error(data.error);
 
         setStatus(true, 'Connected');
-
         container.innerHTML = '';
-        data.rules.forEach((rule, i) => {
-          const isBlock = rule.action.toLowerCase().includes('block');
 
-          const name = document.createElement('div');
-          name.className = 'rule-name';
-          name.textContent = rule.description;
+        let animIdx = 0;
+        data.groups.forEach(group => {
+          const header = document.createElement('div');
+          header.className = 'zone-group-header';
+          header.textContent = group.label;
+          container.appendChild(header);
 
-          const badge = document.createElement('span');
-          badge.className = `badge ${isBlock ? 'badge-block' : 'badge-allow'}`;
-          badge.textContent = isBlock ? 'Block' : 'Allow';
-
-          const sched = document.createElement('span');
-          sched.textContent = rule.schedule === 'always' ? 'Always active' : rule.schedule;
-
-          const meta = document.createElement('div');
-          meta.className = 'rule-meta';
-          meta.appendChild(badge);
-          meta.appendChild(sched);
-
-          if (rule.source_zone || rule.dest_zone) {
-            const zone = document.createElement('span');
-            zone.className = 'rule-zone';
-            zone.textContent = rule.source_zone === rule.dest_zone
-              ? rule.source_zone
-              : `${rule.source_zone} → ${rule.dest_zone}`;
-            meta.appendChild(zone);
-          }
-
-          const shortId = document.createElement('span');
-          shortId.className = 'rule-id';
-          shortId.textContent = `#${rule.index}`;
-          meta.appendChild(shortId);
-
-          const info = document.createElement('div');
-          info.className = 'rule-info';
-          info.appendChild(name);
-          info.appendChild(meta);
-
-          const lbl = document.createElement('span');
-          lbl.className = 'toggle-label';
-          lbl.id = `lbl-${rule.id}`;
-          lbl.textContent = rule.enabled ? 'On' : 'Off';
-
-          const checkbox = document.createElement('input');
-          checkbox.type = 'checkbox';
-          checkbox.checked = rule.enabled;
-          checkbox.addEventListener('change', () => toggle(rule.id, checkbox));
-
-          const slider = document.createElement('span');
-          slider.className = 'slider';
-
-          const togLabel = document.createElement('label');
-          togLabel.className = 'toggle';
-          togLabel.id = `tog-${rule.id}`;
-          togLabel.appendChild(checkbox);
-          togLabel.appendChild(slider);
-
-          const wrap = document.createElement('div');
-          wrap.className = 'toggle-wrap';
-          wrap.appendChild(lbl);
-          wrap.appendChild(togLabel);
-
-          const card = document.createElement('div');
-          card.className = 'rule-card';
-          card.style.animationDelay = `${i * 0.05}s`;
-          card.dataset.id = rule.id;
-          if (rule.tooltip) card.dataset.tooltip = rule.tooltip;
-          card.appendChild(info);
-          card.appendChild(wrap);
-
-          container.appendChild(card);
+          group.rules.forEach((rule, pos) => {
+            container.appendChild(buildRuleCard(rule, pos + 1, animIdx));
+            animIdx++;
+          });
         });
       } catch (e) {
         setStatus(false, 'Error');
