@@ -357,11 +357,16 @@ def api_debug_policy_ordering():
         results["_sites"] = {"error": str(exc)}
 
     for site_id in site_ids:
-        path = f"/proxy/network/v1/sites/{site_id}/firewall/policies/ordering"
-        try:
-            results[path] = _fetch_json(s, path)
-        except Exception as exc:
-            results[path] = {"error": str(exc)}
+        for path in [
+            f"/proxy/network/v2/api/site/{site_id}/firewall/policies/ordering",
+            f"/proxy/network/v2/api/site/{site_id}/firewall-policies/ordering",
+            f"/proxy/network/integration/v1/sites/{site_id}/firewall/policies/ordering",
+            f"/proxy/network/v1/sites/{site_id}/firewall/policies/ordering",
+        ]:
+            try:
+                results[path] = _fetch_json(s, path)
+            except Exception as exc:
+                results[path] = {"error": str(exc)}
 
     return _no_cache(jsonify(results))
 
