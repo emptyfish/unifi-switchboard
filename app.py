@@ -341,15 +341,27 @@ def api_debug_zones():
 def api_debug_policy_ordering():
     s = get_unifi_session()
     results = {}
-    for path in [
-        "/proxy/network/v1/sites/default/firewall/policies/ordering",
-        "/proxy/network/v2/api/site/default/firewall/policies/ordering",
-        "/proxy/network/v1/api/sites/default/firewall/policies/ordering",
-    ]:
+
+    # Discover the v1 site ID (may differ from legacy "default")
+    site_ids = ["default"]
+    try:
+        sites_data = _fetch_json(s, "/proxy/network/v1/api/sites")
+        if isinstance(sites_data, list):
+            for site in sites_data:
+                sid = site.get("id") or site.get("_id") or site.get("name")
+                if sid and sid not in site_ids:
+                    site_ids.append(sid)
+        results["_sites"] = sites_data
+    except Exception as exc:
+        results["_sites"] = {"error": str(exc)}
+
+    for site_id in site_ids:
+        path = f"/proxy/network/v1/sites/{site_id}/firewall/policies/ordering"
         try:
             results[path] = _fetch_json(s, path)
         except Exception as exc:
             results[path] = {"error": str(exc)}
+
     return _no_cache(jsonify(results))
 
 
