@@ -156,25 +156,31 @@ def _get_integration_site_id():
     return None
 
 
-def get_policy_ordering():
-    if not UNIFI_API_KEY:
+def get_policy_ordering(zone_pairs):
+    if not UNIFI_API_KEY or not zone_pairs:
         return {}
     try:
         site_id = _get_integration_site_id()
         if not site_id:
             log.warning("policy ordering: could not resolve integration site ID")
             return {}
-        data = _integration_get(f"/sites/{site_id}/firewall/policies/ordering")
         ordering = {}
-        if isinstance(data, list):
-            for item in data:
-                if isinstance(item, str):
-                    ordering[item] = len(ordering)
-                elif isinstance(item, dict):
-                    pid = item.get("id") or item.get("_id") or item.get("policyId")
-                    pos = item.get("order") or item.get("index") or item.get("position") or len(ordering)
-                    if pid:
-                        ordering[pid] = pos
+        for src_zone_id, dst_zone_id in zone_pairs:
+            try:
+                data = _integration_get(
+                    f"/sites/{site_id}/firewall/policies/ordering"
+                    f"?sourceFirewallZoneId={src_zone_id}&destinationFirewallZoneId={dst_zone_id}"
+                )
+                if isinstance(data, list):
+                    for pos, item in enumerate(data):
+                        if isinstance(item, str):
+                            ordering[item] = pos
+                        elif isinstance(item, dict):
+                            pid = item.get("id") or item.get("_id") or item.get("policyId")
+                            if pid:
+                                ordering[pid] = item.get("order", pos)
+            except Exception as exc:
+                log.warning("ordering fetch failed for pair %s->%s: %s", src_zone_id, dst_zone_id, exc)
         return ordering
     except Exception as exc:
         log.warning("policy ordering fetch failed: %s", exc)
@@ -324,7 +330,7 @@ def api_rules():
                 "index": p.get("index", 0),
             })
 
-        ordering = get_policy_ordering()
+        ordering = get_policy_ordering(group_order)
 
         groups = []
         for key in group_order:
@@ -431,7 +437,29 @@ def api_debug_policy_ordering():
             site_id = _get_integration_site_id()
             results["resolved_site_id"] = site_id
             if site_id:
-                results["integration_ordering"] = _integration_get(f"/sites/{site_id}/firewall/policies/ordering")
+                # Fetch ordering for all zone pairs found in current policies
+                s2 = get_unifi_session()
+                policies = get_firewall_policies(s2)
+                seen = set()
+                zone_pairs = []
+                for p in policies:
+                    if p.get("predefined") is not False:
+                        continue
+                    src = p.get("source", {}).get("zone_id", "")
+                    dst = p.get("destination", {}).get("zone_id", "")
+                    if src and dst and (src, dst) not in seen:
+                        seen.add((src, dst))
+                        zone_pairs.append((src, dst))
+                pair_results = {}
+                for src, dst in zone_pairs:
+                    try:
+                        pair_results[f"{src[-6:]}→{dst[-6:]}"] = _integration_get(
+                            f"/sites/{site_id}/firewall/policies/ordering"
+                            f"?sourceFirewallZoneId={src}&destinationFirewallZoneId={dst}"
+                        )
+                    except Exception as exc:
+                        pair_results[f"{src[-6:]}→{dst[-6:]}"] = {"error": str(exc)}
+                results["integration_ordering"] = pair_results
         except Exception as exc:
             results["integration_error"] = str(exc)
     else:
