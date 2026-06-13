@@ -41,6 +41,7 @@ def _validate_url(val):
 TRUST_PROXY    = os.environ.get("TRUST_PROXY", "").lower() in ("1", "true", "yes")
 
 UNIFI_URL      = _require_env("UNIFI_URL")
+UNIFI_SITE     = os.environ.get("UNIFI_SITE", "default").strip() or "default"
 UNIFI_USERNAME = _require_env("UNIFI_USERNAME")
 UNIFI_PASSWORD = _require_env("UNIFI_PASSWORD", min_length=8)
 APP_PASSWORD   = _require_env("APP_PASSWORD", min_length=8)
@@ -117,7 +118,7 @@ def _format_schedule(schedule):
 
 
 def get_firewall_policies(s):
-    r = s.get(f"{UNIFI_URL}/proxy/network/v2/api/site/default/firewall-policies", timeout=10)
+    r = s.get(f"{UNIFI_URL}/proxy/network/v2/api/site/{UNIFI_SITE}/firewall-policies", timeout=10)
     r.raise_for_status()
     return r.json()
 
@@ -131,7 +132,7 @@ def _fetch_json(s, path):
 
 def get_zone_names(s, _policies=None):
     try:
-        entries = _fetch_json(s, "/proxy/network/api/s/default/rest/networkconf")
+        entries = _fetch_json(s, f"/proxy/network/api/s/{UNIFI_SITE}/rest/networkconf")
     except Exception as exc:
         log.warning("networkconf failed: %s", exc)
         return {}
@@ -158,7 +159,7 @@ def set_policy_enabled(s, policy_id, enabled):
         raise ValueError("Policy not found")
     policy["enabled"] = enabled
     r = s.put(
-        f"{UNIFI_URL}/proxy/network/v2/api/site/default/firewall-policies/{policy_id}",
+        f"{UNIFI_URL}/proxy/network/v2/api/site/{UNIFI_SITE}/firewall-policies/{policy_id}",
         json=policy,
         timeout=10,
     )
@@ -327,7 +328,7 @@ def api_debug_zones():
     s = get_unifi_session()
     results = {}
     for path in [
-        "/proxy/network/api/s/default/rest/networkconf",
+        f"/proxy/network/api/s/{UNIFI_SITE}/rest/networkconf",
     ]:
         try:
             results[path] = _fetch_json(s, path)
@@ -343,7 +344,7 @@ def api_debug_policy_ordering():
     results = {}
 
     # Discover the v1 site ID (may differ from legacy "default")
-    site_ids = ["default"]
+    site_ids = [UNIFI_SITE]
     try:
         sites_data = _fetch_json(s, "/proxy/network/v1/api/sites")
         if isinstance(sites_data, list):

@@ -25,5 +25,6 @@
   <Config Name="UNIFI_PASSWORD" Target="UNIFI_PASSWORD" Default="" Mode="" Description="UniFi admin password" Type="Variable" Display="always" Required="true" Mask="true"></Config>
   <Config Name="APP_PASSWORD" Target="APP_PASSWORD" Default="" Mode="" Description="Password used to log into this web UI" Type="Variable" Display="always" Required="true" Mask="true"></Config>
   <Config Name="SECRET_KEY" Target="SECRET_KEY" Default="" Mode="" Description="Random secret for Flask sessions. Generate one with: python3 -c &quot;import secrets; print(secrets.token_hex(32))&quot;" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="UNIFI_SITE" Target="UNIFI_SITE" Default="default" Mode="" Description="UniFi site name — leave as 'default' for single-site setups. Change if you use multiple sites or a custom site name." Type="Variable" Display="advanced" Required="false" Mask="false">default</Config>
   <Config Name="TRUST_PROXY" Target="TRUST_PROXY" Default="false" Mode="" Description="Set to true when running behind a reverse proxy or Cloudflare Tunnel — enables ProxyFix and Secure cookie flag" Type="Variable" Display="always" Required="false" Mask="false">false</Config>
 </Container>
