@@ -85,6 +85,32 @@ def get_firewall_policies(s):
     return r.json()
 
 
+def get_zone_names(s, policies):
+    networks = {}
+    try:
+        r = s.get(f"{UNIFI_URL}/proxy/network/api/s/default/rest/networkconf", timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        entries = data.get("data", data) if isinstance(data, dict) else data
+        networks = {e["_id"]: e.get("name", "") for e in entries if "_id" in e and e.get("name")}
+    except Exception as exc:
+        log.warning("networkconf failed: %s", exc)
+
+    zone_nets: dict[str, set] = {}
+    for p in policies:
+        for side in ("source", "destination"):
+            seg = p.get(side, {})
+            zid = seg.get("zone_id")
+            if not zid:
+                continue
+            for nid in seg.get("network_ids", []):
+                name = networks.get(nid)
+                if name:
+                    zone_nets.setdefault(zid, set()).add(name)
+
+    return {zid: "/".join(sorted(names)) for zid, names in zone_nets.items()}
+
+
 def set_policy_enabled(s, policy_id, enabled):
     policies = get_firewall_policies(s)
     policy = next((p for p in policies if p.get("_id") == policy_id), None)
@@ -97,13 +123,14 @@ def set_policy_enabled(s, policy_id, enabled):
         timeout=10,
     )
     r.raise_for_status()
-    return r.json()
 
 
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not session.get("logged_in"):
+            if request.path.startswith("/api/"):
+                return jsonify({"ok": False, "error": "Unauthorized"}), 401
             return redirect(url_for("login"))
         return f(*args, **kwargs)
     return decorated
@@ -158,7 +185,8 @@ def logout():
 @app.route("/")
 @login_required
 def index():
-    return render_template("index.html")
+    resp = _no_cache(app.make_response(render_template("index.html")))
+    return resp
 
 
 @app.route("/api/rules")
@@ -168,17 +196,29 @@ def api_rules():
     try:
         s = get_unifi_session()
         policies = get_firewall_policies(s)
+        zones = get_zone_names(s, policies)
         clean = []
+        seen_ids = set()
         for p in policies:
-            if p.get("predefined", True):
+            if p.get("predefined") is not False:
                 continue
+            pid = p.get("_id")
+            if pid in seen_ids:
+                continue
+            seen_ids.add(pid)
             schedule = p.get("schedule", {})
+            src_zone_id = p.get("source", {}).get("zone_id", "")
+            dst_zone_id = p.get("destination", {}).get("zone_id", "")
             clean.append({
-                "id": p.get("_id"),
+                "id": pid,
                 "description": p.get("name", "Unnamed Policy"),
+                "tooltip": p.get("description", ""),
                 "enabled": p.get("enabled", False),
                 "action": p.get("action", "").capitalize(),
                 "schedule": schedule.get("mode", "ALWAYS").lower(),
+                "short_id": pid[-8:] if pid else "",
+                "source_zone": zones.get(src_zone_id) or src_zone_id[-4:] if src_zone_id else "",
+                "dest_zone": zones.get(dst_zone_id) or dst_zone_id[-4:] if dst_zone_id else "",
             })
         return _no_cache(jsonify({"ok": True, "rules": clean}))
     except Exception:

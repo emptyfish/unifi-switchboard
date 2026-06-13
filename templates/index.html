@@ -163,6 +163,21 @@
       color: var(--muted);
       display: flex;
       gap: 0.75rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .rule-zone {
+      font-size: 0.62rem;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
+    .rule-id {
+      font-size: 0.58rem;
+      color: #3a4f66;
+      letter-spacing: 0.06em;
+      font-family: var(--mono);
     }
 
     .badge {
@@ -242,6 +257,37 @@
       pointer-events: none;
     }
 
+    .rule-card[data-tooltip] {
+      position: relative;
+    }
+
+    .rule-card[data-tooltip]::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1a2535;
+      color: var(--text);
+      font-size: 0.7rem;
+      line-height: 1.4;
+      padding: 0.4rem 0.65rem;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      white-space: normal;
+      max-width: 280px;
+      width: max-content;
+      text-align: left;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+      z-index: 10;
+    }
+
+    .rule-card[data-tooltip]:hover::after {
+      opacity: 1;
+    }
+
     /* Skeleton loader */
     .skeleton {
       background: var(--surface);
@@ -298,7 +344,7 @@
 <body>
   <header>
     <div>
-      <span class="brand">Switchboard<span>UniFi Firewall</span></span>
+      <span class="brand">Switchboard<span>UniFi Zone Policies</span></span>
     </div>
     <div class="header-right">
       <div id="status-indicator">
@@ -342,6 +388,7 @@
     async function loadRules() {
       try {
         const res = await fetch('/api/rules');
+        if (res.status === 401) { window.location.href = '/login'; return; }
         const data = await res.json();
         if (!data.ok) throw new Error(data.error);
 
@@ -366,6 +413,18 @@
           meta.className = 'rule-meta';
           meta.appendChild(badge);
           meta.appendChild(sched);
+
+          if (rule.source_zone || rule.dest_zone) {
+            const zone = document.createElement('span');
+            zone.className = 'rule-zone';
+            zone.textContent = `${rule.source_zone} → ${rule.dest_zone}`;
+            meta.appendChild(zone);
+          }
+
+          const shortId = document.createElement('span');
+          shortId.className = 'rule-id';
+          shortId.textContent = rule.short_id;
+          meta.appendChild(shortId);
 
           const info = document.createElement('div');
           info.className = 'rule-info';
@@ -400,6 +459,7 @@
           card.className = 'rule-card';
           card.style.animationDelay = `${i * 0.05}s`;
           card.dataset.id = rule.id;
+          if (rule.tooltip) card.dataset.tooltip = rule.tooltip;
           card.appendChild(info);
           card.appendChild(wrap);
 
@@ -428,6 +488,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ enabled }),
         });
+        if (res.status === 401) { window.location.href = '/login'; return; }
         const data = await res.json();
         if (!data.ok) throw new Error(data.error);
 
