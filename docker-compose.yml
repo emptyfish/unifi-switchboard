@@ -11,4 +11,5 @@ services:
       - UNIFI_PASSWORD=your-unifi-password       # ← UniFi admin password
       - APP_PASSWORD=created-app-password          # ← password to log into this app
       - SECRET_KEY=replace-with-random-string  # ← run: python3 -c "import secrets; print(secrets.token_hex(32))"
+      # - TRUST_PROXY=true                      # ← uncomment when running behind Cloudflare Tunnel or a reverse proxy
     network_mode: bridge

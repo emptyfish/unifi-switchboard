@@ -10,6 +10,7 @@ from flask import Flask, render_template, jsonify, request, session, redirect, u
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from functools import wraps
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -37,6 +38,8 @@ def _validate_url(val):
         return False
 
 
+TRUST_PROXY    = os.environ.get("TRUST_PROXY", "").lower() in ("1", "true", "yes")
+
 UNIFI_URL      = _require_env("UNIFI_URL")
 UNIFI_USERNAME = _require_env("UNIFI_USERNAME")
 UNIFI_PASSWORD = _require_env("UNIFI_PASSWORD", min_length=8)
@@ -51,8 +54,12 @@ app.secret_key = SECRET_KEY
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Strict",
-    SESSION_COOKIE_SECURE=False,  # Set True when serving over HTTPS
+    SESSION_COOKIE_SECURE=TRUST_PROXY,
 )
+
+if TRUST_PROXY:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    log.info("proxy mode enabled: trusting 1 hop of X-Forwarded-* headers")
 
 limiter = Limiter(
     get_remote_address,
