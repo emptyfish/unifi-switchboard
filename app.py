@@ -336,5 +336,22 @@ def api_debug_zones():
     return _no_cache(jsonify(results))
 
 
+@app.route("/api/debug/policy-ordering")
+@login_required
+def api_debug_policy_ordering():
+    s = get_unifi_session()
+    results = {}
+    for path in [
+        "/proxy/network/v1/sites/default/firewall/policies/ordering",
+        "/proxy/network/v2/api/site/default/firewall/policies/ordering",
+        "/proxy/network/v1/api/sites/default/firewall/policies/ordering",
+    ]:
+        try:
+            results[path] = _fetch_json(s, path)
+        except Exception as exc:
+            results[path] = {"error": str(exc)}
+    return _no_cache(jsonify(results))
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5055, debug=False)
