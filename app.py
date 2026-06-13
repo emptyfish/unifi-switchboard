@@ -131,21 +131,40 @@ def _fetch_json(s, path):
     return data.get("data", data) if isinstance(data, dict) and "data" in data else data
 
 
+def _integration_get(path):
+    r = requests.get(
+        f"{UNIFI_URL}/proxy/network/integration/v1{path}",
+        headers={"X-API-Key": UNIFI_API_KEY, "Accept": "application/json"},
+        verify=False,
+        timeout=10,
+    )
+    r.raise_for_status()
+    data = r.json()
+    return data.get("data", data) if isinstance(data, dict) and "data" in data else data
+
+
+def _get_integration_site_id():
+    sites = _integration_get("/sites")
+    if not isinstance(sites, list):
+        return None
+    for site in sites:
+        name = site.get("name", "")
+        if name == UNIFI_SITE or name.lower() == "default":
+            return site.get("id") or site.get("_id")
+    if sites:
+        return sites[0].get("id") or sites[0].get("_id")
+    return None
+
+
 def get_policy_ordering():
     if not UNIFI_API_KEY:
         return {}
     try:
-        r = requests.get(
-            f"{UNIFI_URL}/proxy/network/integration/v1/sites/{UNIFI_SITE}/firewall/policies/ordering",
-            headers={"X-API-Key": UNIFI_API_KEY, "Accept": "application/json"},
-            verify=False,
-            timeout=10,
-        )
-        r.raise_for_status()
-        data = r.json()
-        if isinstance(data, dict) and "data" in data:
-            data = data["data"]
-        # Build {policy_id: position} from whatever format is returned
+        site_id = _get_integration_site_id()
+        if not site_id:
+            log.warning("policy ordering: could not resolve integration site ID")
+            return {}
+        data = _integration_get(f"/sites/{site_id}/firewall/policies/ordering")
         ordering = {}
         if isinstance(data, list):
             for item in data:
@@ -406,17 +425,15 @@ def api_debug_policy_ordering():
                 results[path] = {"error": str(exc)}
 
     if UNIFI_API_KEY:
-        api_path = f"/proxy/network/integration/v1/sites/{UNIFI_SITE}/firewall/policies/ordering"
         try:
-            r = requests.get(
-                f"{UNIFI_URL}{api_path}",
-                headers={"X-API-Key": UNIFI_API_KEY, "Accept": "application/json"},
-                verify=False,
-                timeout=10,
-            )
-            results[f"api_key:{api_path}"] = r.json()
+            integration_sites = _integration_get("/sites")
+            results["integration_sites"] = integration_sites
+            site_id = _get_integration_site_id()
+            results["resolved_site_id"] = site_id
+            if site_id:
+                results["integration_ordering"] = _integration_get(f"/sites/{site_id}/firewall/policies/ordering")
         except Exception as exc:
-            results[f"api_key:{api_path}"] = {"error": str(exc)}
+            results["integration_error"] = str(exc)
     else:
         results["_api_key"] = "UNIFI_API_KEY not set"
 
