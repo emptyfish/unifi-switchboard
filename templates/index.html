@@ -101,6 +101,46 @@
     }
     .logout:hover { color: var(--text); }
 
+    .debug-menu {
+      position: relative;
+    }
+
+    .debug-toggle {
+      font-size: 0.7rem;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: color 0.2s;
+      user-select: none;
+    }
+    .debug-toggle:hover { color: var(--text); }
+
+    .debug-dropdown {
+      display: none;
+      position: absolute;
+      top: calc(100% + 0.5rem);
+      right: 0;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      min-width: 160px;
+      z-index: 20;
+    }
+    .debug-menu.open .debug-dropdown { display: block; }
+
+    .debug-dropdown a {
+      display: block;
+      padding: 0.55rem 0.9rem;
+      font-size: 0.68rem;
+      color: var(--muted);
+      text-decoration: none;
+      letter-spacing: 0.06em;
+      transition: background 0.15s, color 0.15s;
+    }
+    .debug-dropdown a:hover { background: var(--surface); color: var(--text); }
+    .debug-dropdown a + a { border-top: 1px solid var(--border); }
+
     main {
       max-width: 720px;
       margin: 0 auto;
@@ -339,6 +379,89 @@
     .toast.show { opacity: 1; transform: translateY(0); }
     .toast.success { border-color: rgba(166,227,161,0.3); color: var(--green); }
     .toast.fail    { border-color: rgba(243,139,168,0.3); color: var(--red); }
+
+    /* Debug modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    .modal-overlay.open { display: flex; }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      width: 100%;
+      max-width: 860px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1.1rem;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .modal-title {
+      font-size: 0.72rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .modal-actions { display: flex; gap: 0.5rem; }
+
+    .modal-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.65rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 0.3rem 0.65rem;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .modal-btn:hover { color: var(--text); border-color: #2a3f57; }
+    .modal-btn.copied { color: var(--green); border-color: rgba(166,227,161,0.4); }
+
+    .modal-body {
+      overflow: auto;
+      padding: 1rem 1.1rem;
+      margin: 0;
+      font-size: 0.75rem;
+      line-height: 1.6;
+      tab-size: 2;
+      flex: 1;
+    }
+
+    .modal-loading {
+      padding: 2rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+    }
+
+    .json-key  { color: var(--accent); }
+    .json-str  { color: var(--green); }
+    .json-num  { color: var(--yellow); }
+    .json-bool { color: #cba6f7; }
+    .json-null { color: var(--muted); }
   </style>
 </head>
 <body>
@@ -350,6 +473,14 @@
       <div id="status-indicator">
         <div class="dot" id="dot"></div>
         <span id="status-text">Connecting…</span>
+      </div>
+      <div class="debug-menu" id="debugMenu">
+        <span class="debug-toggle" id="debugToggle">Debug</span>
+        <div class="debug-dropdown">
+          <a data-debug="/api/rules">Processed Rules</a>
+          <a data-debug="/api/debug/raw-policies">Raw Policies</a>
+          <a data-debug="/api/debug/zones">Zones / Networks</a>
+        </div>
       </div>
       <a href="/logout" class="logout">Logout</a>
     </div>
@@ -366,12 +497,87 @@
 
   <div class="toast" id="toast"></div>
 
+  <div class="modal-overlay" id="debugModal">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title" id="modalTitle"></span>
+        <div class="modal-actions">
+          <button class="modal-btn" id="copyBtn">Copy</button>
+          <button class="modal-btn" id="modalClose">Close</button>
+        </div>
+      </div>
+      <pre class="modal-body" id="modalBody"></pre>
+    </div>
+  </div>
+
   <script>
     const container = document.getElementById('rules-container');
     const dot = document.getElementById('dot');
     const statusText = document.getElementById('status-text');
     const toast = document.getElementById('toast');
     let toastTimer;
+
+    const debugMenu = document.getElementById('debugMenu');
+    document.getElementById('debugToggle').addEventListener('click', e => {
+      debugMenu.classList.toggle('open');
+      e.stopPropagation();
+    });
+    document.addEventListener('click', () => debugMenu.classList.remove('open'));
+
+    // Debug modal
+    const debugModal = document.getElementById('debugModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalBody  = document.getElementById('modalBody');
+    const copyBtn    = document.getElementById('copyBtn');
+    let   rawJson    = '';
+
+    function jsonHighlight(str) {
+      return str.replace(
+        /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
+        m => {
+          if (/^"/.test(m)) return `<span class="${/:$/.test(m) ? 'json-key' : 'json-str'}">${m}</span>`;
+          if (/true|false/.test(m)) return `<span class="json-bool">${m}</span>`;
+          if (/null/.test(m))       return `<span class="json-null">${m}</span>`;
+          return `<span class="json-num">${m}</span>`;
+        }
+      );
+    }
+
+    document.querySelectorAll('[data-debug]').forEach(el => {
+      el.addEventListener('click', async e => {
+        e.stopPropagation();
+        debugMenu.classList.remove('open');
+        const endpoint = el.dataset.debug;
+        modalTitle.textContent = endpoint;
+        modalBody.innerHTML = '<div class="modal-loading">Loading…</div>';
+        rawJson = '';
+        copyBtn.textContent = 'Copy';
+        copyBtn.classList.remove('copied');
+        debugModal.classList.add('open');
+        try {
+          const res = await fetch(endpoint);
+          if (res.status === 401) { window.location.href = '/login'; return; }
+          const data = await res.json();
+          rawJson = JSON.stringify(data, null, 2);
+          modalBody.innerHTML = jsonHighlight(rawJson.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'));
+        } catch (err) {
+          modalBody.textContent = `Error: ${err.message}`;
+        }
+      });
+    });
+
+    document.getElementById('modalClose').addEventListener('click', () => debugModal.classList.remove('open'));
+    debugModal.addEventListener('click', e => { if (e.target === debugModal) debugModal.classList.remove('open'); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') debugModal.classList.remove('open'); });
+
+    copyBtn.addEventListener('click', () => {
+      if (!rawJson) return;
+      navigator.clipboard.writeText(rawJson).then(() => {
+        copyBtn.textContent = 'Copied!';
+        copyBtn.classList.add('copied');
+        setTimeout(() => { copyBtn.textContent = 'Copy'; copyBtn.classList.remove('copied'); }, 2000);
+      });
+    });
 
     function showToast(msg, type = 'success') {
       clearTimeout(toastTimer);
@@ -417,13 +623,15 @@
           if (rule.source_zone || rule.dest_zone) {
             const zone = document.createElement('span');
             zone.className = 'rule-zone';
-            zone.textContent = `${rule.source_zone} → ${rule.dest_zone}`;
+            zone.textContent = rule.source_zone === rule.dest_zone
+              ? rule.source_zone
+              : `${rule.source_zone} → ${rule.dest_zone}`;
             meta.appendChild(zone);
           }
 
           const shortId = document.createElement('span');
           shortId.className = 'rule-id';
-          shortId.textContent = rule.short_id;
+          shortId.textContent = `#${rule.index}`;
           meta.appendChild(shortId);
 
           const info = document.createElement('div');

@@ -86,36 +86,69 @@ def get_unifi_session():
     return s
 
 
+_DAY_ORDER  = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+_DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def _fmt_time(t):
+    h, m = map(int, t.split(":"))
+    period = "AM" if h < 12 else "PM"
+    h12 = h % 12 or 12
+    return f"{h12}:{m:02d}{period}" if m else f"{h12}{period}"
+
+
+def _format_schedule(schedule):
+    mode = schedule.get("mode", "ALWAYS")
+    if mode == "ALWAYS":
+        return "always"
+    days = [d for d in _DAY_ORDER if d in schedule.get("repeat_on_days", [])]
+    if not days:
+        return mode.lower()
+    indices = [_DAY_ORDER.index(d) for d in days]
+    consecutive = all(indices[i+1] - indices[i] == 1 for i in range(len(indices) - 1))
+    day_str = (f"{_DAY_LABELS[indices[0]]}–{_DAY_LABELS[indices[-1]]}"
+               if consecutive and len(days) > 1
+               else ", ".join(_DAY_LABELS[i] for i in indices))
+    start = schedule.get("time_range_start")
+    end   = schedule.get("time_range_end")
+    if start and end and not schedule.get("time_all_day"):
+        return f"{day_str} {_fmt_time(start)}–{_fmt_time(end)}"
+    return day_str
+
+
 def get_firewall_policies(s):
     r = s.get(f"{UNIFI_URL}/proxy/network/v2/api/site/default/firewall-policies", timeout=10)
     r.raise_for_status()
     return r.json()
 
 
-def get_zone_names(s, policies):
-    networks = {}
+def _fetch_json(s, path):
+    r = s.get(f"{UNIFI_URL}{path}", timeout=10)
+    r.raise_for_status()
+    data = r.json()
+    return data.get("data", data) if isinstance(data, dict) and "data" in data else data
+
+
+def get_zone_names(s, _policies=None):
     try:
-        r = s.get(f"{UNIFI_URL}/proxy/network/api/s/default/rest/networkconf", timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        entries = data.get("data", data) if isinstance(data, dict) else data
-        networks = {e["_id"]: e.get("name", "") for e in entries if "_id" in e and e.get("name")}
+        entries = _fetch_json(s, "/proxy/network/api/s/default/rest/networkconf")
     except Exception as exc:
         log.warning("networkconf failed: %s", exc)
+        return {}
 
-    zone_nets: dict[str, set] = {}
-    for p in policies:
-        for side in ("source", "destination"):
-            seg = p.get(side, {})
-            zid = seg.get("zone_id")
-            if not zid:
-                continue
-            for nid in seg.get("network_ids", []):
-                name = networks.get(nid)
-                if name:
-                    zone_nets.setdefault(zid, set()).add(name)
+    zone_groups: dict[str, list] = {}
+    for e in entries:
+        zid = e.get("firewall_zone_id")
+        if zid and e.get("name"):
+            zone_groups.setdefault(zid, []).append(e)
 
-    return {zid: "/".join(sorted(names)) for zid, names in zone_nets.items()}
+    result = {}
+    for zid, nets in zone_groups.items():
+        if all(n.get("purpose") == "wan" for n in nets):
+            result[zid] = "WAN"
+        else:
+            result[zid] = "/".join(n["name"] for n in nets if n.get("name"))
+    return result
 
 
 def set_policy_enabled(s, policy_id, enabled):
@@ -203,7 +236,7 @@ def api_rules():
     try:
         s = get_unifi_session()
         policies = get_firewall_policies(s)
-        zones = get_zone_names(s, policies)
+        zones = get_zone_names(s)
         clean = []
         seen_ids = set()
         for p in policies:
@@ -222,8 +255,8 @@ def api_rules():
                 "tooltip": p.get("description", ""),
                 "enabled": p.get("enabled", False),
                 "action": p.get("action", "").capitalize(),
-                "schedule": schedule.get("mode", "ALWAYS").lower(),
-                "short_id": pid[-8:] if pid else "",
+                "schedule": _format_schedule(schedule),
+                "index": p.get("index", ""),
                 "source_zone": zones.get(src_zone_id) or src_zone_id[-4:] if src_zone_id else "",
                 "dest_zone": zones.get(dst_zone_id) or dst_zone_id[-4:] if dst_zone_id else "",
             })
@@ -254,6 +287,30 @@ def api_toggle(rule_id):
 @app.route("/health")
 def health():
     return jsonify({"ok": True})
+
+
+@app.route("/api/debug/raw-policies")
+@login_required
+def api_debug_raw_policies():
+    s = get_unifi_session()
+    policies = get_firewall_policies(s)
+    user_policies = [p for p in policies if p.get("predefined") is False]
+    return _no_cache(jsonify(user_policies))
+
+
+@app.route("/api/debug/zones")
+@login_required
+def api_debug_zones():
+    s = get_unifi_session()
+    results = {}
+    for path in [
+        "/proxy/network/api/s/default/rest/networkconf",
+    ]:
+        try:
+            results[path] = _fetch_json(s, path)
+        except Exception as exc:
+            results[path] = {"error": str(exc)}
+    return _no_cache(jsonify(results))
 
 
 if __name__ == "__main__":
