@@ -47,7 +47,7 @@ docker run -d \
   -e UNIFI_PASSWORD=your-unifi-password \
   -e APP_PASSWORD=your-app-password \
   -e SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))") \
-  ghcr.io/YOUR_USER/unifi-switchboard:latest
+  ghcr.io/emptyfish/unifi-switchboard:latest
 ```
 
 Then open `http://YOUR_HOST:5055`.

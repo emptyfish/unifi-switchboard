@@ -2,7 +2,7 @@
 <Container version="2">
   <Name>unifi-switchboard</Name>
   <Repository>ghcr.io/emptyfish/unifi-switchboard:latest</Repository>
-  <Registry/>
+  <Registry>https://github.com/emptyfish/unifi-switchboard/pkgs/container/unifi-switchboard</Registry>
   <Network>bridge</Network>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
@@ -10,8 +10,16 @@
   <Category>Network:Management Productivity:</Category>
   <WebUI>http://[IP]:[PORT:5055]/</WebUI>
   <Icon>https://raw.githubusercontent.com/emptyfish/unifi-switchboard/main/static/apple-touch-icon.png</Icon>
+  <Project>https://github.com/emptyfish/unifi-switchboard</Project>
+  <Support>https://github.com/emptyfish/unifi-switchboard/issues</Support>
+  <TemplateURL>https://raw.githubusercontent.com/emptyfish/unraid-apps/main/unifi-switchboard/unraid.xml</TemplateURL>
   <ExtraParams>--no-healthcheck</ExtraParams>
   <Changes>
+### 1.1.0
+- Optional `UNIFI_API_KEY` variable — enables correct policy display order (matches UniFi UI)
+- Policies sorted per zone pair using the integration ordering endpoint
+- Generate API key in Network → Integrations → API Keys
+
 ### 1.0.0
 - Initial release
 - Zone-based firewall policy toggling via UniFi firewall-policies API
