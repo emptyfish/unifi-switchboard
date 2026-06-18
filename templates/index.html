@@ -472,6 +472,57 @@
     .json-num  { color: var(--yellow); }
     .json-bool { color: #cba6f7; }
     .json-null { color: var(--muted); }
+
+    .nav-toggle {
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      gap: 5px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+    }
+    .nav-toggle span {
+      display: block;
+      width: 20px;
+      height: 2px;
+      background: var(--muted);
+      border-radius: 2px;
+      transition: background 0.2s;
+    }
+    .nav-toggle:hover span { background: var(--text); }
+
+    @media (max-width: 540px) {
+      .nav-toggle { display: flex; }
+
+      .header-right {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+        padding: 1rem 1.5rem;
+        background: rgba(10,14,20,0.97);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--border);
+        z-index: 9;
+      }
+
+      header.nav-open .header-right { display: flex; }
+
+      .debug-dropdown {
+        position: static;
+        border: none;
+        background: none;
+        padding-left: 0.5rem;
+      }
+      .debug-dropdown a { padding: 0.4rem 0; }
+      .debug-dropdown a + a { border-top: none; }
+    }
   </style>
 </head>
 <body>
@@ -479,6 +530,9 @@
     <div>
       <span class="brand">Switchboard<span>UniFi Zone Policies</span></span>
     </div>
+    <button class="nav-toggle" id="navToggle" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
     <div class="header-right">
       <div id="status-indicator">
         <div class="dot" id="dot"></div>
@@ -528,12 +582,21 @@
     const toast = document.getElementById('toast');
     let toastTimer;
 
+    const headerEl = document.querySelector('header');
+    document.getElementById('navToggle').addEventListener('click', e => {
+      headerEl.classList.toggle('nav-open');
+      e.stopPropagation();
+    });
+
     const debugMenu = document.getElementById('debugMenu');
     document.getElementById('debugToggle').addEventListener('click', e => {
       debugMenu.classList.toggle('open');
       e.stopPropagation();
     });
-    document.addEventListener('click', () => debugMenu.classList.remove('open'));
+    document.addEventListener('click', () => {
+      debugMenu.classList.remove('open');
+      headerEl.classList.remove('nav-open');
+    });
 
     // Debug modal
     const debugModal = document.getElementById('debugModal');
