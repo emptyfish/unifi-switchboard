@@ -149,14 +149,17 @@ def get_zone_names(site_id):
         return {}
 
 
-_PUT_STRIP_FIELDS = {"id", "metadata", "loggingEnabled"}
+_PUT_FIELDS = {
+    "enabled", "name", "description", "action", "source", "destination",
+    "ipProtocolScope", "connectionStateFilter", "schedule",
+}
 
 def set_policy_enabled(site_id, policy_id, enabled):
     policy = _integration_request("GET", f"/sites/{site_id}/firewall/policies/{policy_id}")
     if not policy:
         raise ValueError("Policy not found")
-    policy["enabled"] = enabled
-    body = {k: v for k, v in policy.items() if k not in _PUT_STRIP_FIELDS}
+    body = {k: v for k, v in policy.items() if k in _PUT_FIELDS}
+    body["enabled"] = enabled
     _integration_request("PUT", f"/sites/{site_id}/firewall/policies/{policy_id}", json=body)
 
 
