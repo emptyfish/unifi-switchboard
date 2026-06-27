@@ -151,7 +151,7 @@ def get_zone_names(site_id):
 
 _PUT_FIELDS = {
     "enabled", "name", "description", "action", "source", "destination",
-    "ipProtocolScope", "connectionStateFilter", "schedule",
+    "ipProtocolScope", "connectionStateFilter", "ipsecFilter", "schedule",
 }
 
 def set_policy_enabled(site_id, policy_id, enabled):
