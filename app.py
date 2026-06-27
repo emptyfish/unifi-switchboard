@@ -114,7 +114,11 @@ def _integration_request(method, path, **kwargs):
         timeout=10,
         **kwargs,
     )
+    if not r.ok:
+        log.error("integration API %s %s -> %s: %s", method, path, r.status_code, r.text[:500])
     r.raise_for_status()
+    if not r.content:
+        return None
     data = r.json()
     return data.get("data", data) if isinstance(data, dict) and "data" in data else data
 
@@ -145,12 +149,15 @@ def get_zone_names(site_id):
         return {}
 
 
+_PUT_STRIP_FIELDS = {"metadata", "loggingEnabled"}
+
 def set_policy_enabled(site_id, policy_id, enabled):
     policy = _integration_request("GET", f"/sites/{site_id}/firewall/policies/{policy_id}")
     if not policy:
         raise ValueError("Policy not found")
     policy["enabled"] = enabled
-    _integration_request("PUT", f"/sites/{site_id}/firewall/policies/{policy_id}", json=policy)
+    body = {k: v for k, v in policy.items() if k not in _PUT_STRIP_FIELDS}
+    _integration_request("PUT", f"/sites/{site_id}/firewall/policies/{policy_id}", json=body)
 
 
 def get_policy_ordering(zone_pairs, site_id):
