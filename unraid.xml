@@ -6,15 +6,22 @@
   <Network>bridge</Network>
   <Shell>sh</Shell>
   <Privileged>false</Privileged>
-  <Overview>UniFi Switchboard is a Lightweight web UI to enable and disable UniFi zone-based firewall policies from any browser on your LAN. Targets the UCG-Max (firmware 10.x) firewall-policies API. Log in with your APP_PASSWORD and toggle your custom rules on or off instantly. Only user-created policies are shown; system defaults are hidden.</Overview>
+  <Overview>UniFi Switchboard is a lightweight web UI to enable and disable UniFi zone-based firewall policies from any browser on your LAN. Authenticates via the official UniFi Local API using an API key — no username or password required. Log in with your APP_PASSWORD and toggle your custom rules on or off instantly.</Overview>
   <Category>Network:Management Productivity:</Category>
   <WebUI>http://[IP]:[PORT:5055]/</WebUI>
   <Icon>https://raw.githubusercontent.com/emptyfish/unifi-switchboard/main/static/apple-touch-icon.png</Icon>
   <Project>https://github.com/emptyfish/unifi-switchboard</Project>
-  <Support>https://github.com/emptyfish/unifi-switchboard/issues</Support>
+  <Support>https://forums.unraid.net/topic/130616-support-emptyfishs-template-repository/</Support>
   <TemplateURL>https://raw.githubusercontent.com/emptyfish/unraid-apps/main/unifi-switchboard/unraid.xml</TemplateURL>
   <ExtraParams>--no-healthcheck</ExtraParams>
   <Changes>
+### 2.0.0
+- **Breaking:** `UNIFI_USERNAME` and `UNIFI_PASSWORD` removed — authentication now uses the official UniFi Local API with `UNIFI_API_KEY` only
+- `UNIFI_API_KEY` is now required (generate in Network → Integrations → API Keys)
+- Policy ordering display now always active (no longer gated on optional API key)
+- Simplified internals: eliminated cookie-session login flow and v2↔integration ID bridging
+- **Known limitation:** Guest / Hotspot zone policies are not returned by the UniFi integration API and cannot be managed here
+
 ### 1.1.0
 - Optional `UNIFI_API_KEY` variable — enables correct policy display order (matches UniFi UI)
 - Policies sorted per zone pair using the integration ordering endpoint
@@ -29,11 +36,9 @@
   </Changes>
   <Config Name="Port" Target="5055" Default="5055" Mode="tcp" Description="Port to access the UniFi Switchboard web UI" Type="Port" Display="always" Required="true" Mask="false">5055</Config>
   <Config Name="UNIFI_URL" Target="UNIFI_URL" Default="https://192.168.1.1" Mode="" Description="Base URL of your UniFi Cloud Gateway — no trailing slash (e.g. https://192.168.1.1)" Type="Variable" Display="always" Required="true" Mask="false"></Config>
-  <Config Name="UNIFI_USERNAME" Target="UNIFI_USERNAME" Default="admin" Mode="" Description="UniFi admin username" Type="Variable" Display="always" Required="true" Mask="false"></Config>
-  <Config Name="UNIFI_PASSWORD" Target="UNIFI_PASSWORD" Default="" Mode="" Description="UniFi admin password" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="UNIFI_API_KEY" Target="UNIFI_API_KEY" Default="" Mode="" Description="UniFi Local API key — required for authentication. Generate in Network &gt; Integrations &gt; API Keys." Type="Variable" Display="always" Required="true" Mask="true"></Config>
   <Config Name="APP_PASSWORD" Target="APP_PASSWORD" Default="" Mode="" Description="Password used to log into this web UI" Type="Variable" Display="always" Required="true" Mask="true"></Config>
   <Config Name="SECRET_KEY" Target="SECRET_KEY" Default="" Mode="" Description="Random secret for Flask sessions. Generate one with: python3 -c &quot;import secrets; print(secrets.token_hex(32))&quot;" Type="Variable" Display="always" Required="true" Mask="true"></Config>
   <Config Name="UNIFI_SITE" Target="UNIFI_SITE" Default="default" Mode="" Description="UniFi site name — leave as 'default' for single-site setups. Change if you use multiple sites or a custom site name." Type="Variable" Display="advanced" Required="false" Mask="false">default</Config>
-  <Config Name="UNIFI_API_KEY" Target="UNIFI_API_KEY" Default="" Mode="" Description="Local UniFi API key — enables correct rule evaluation order display. Generate in Network &gt; Integrations &gt; API Keys." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
   <Config Name="TRUST_PROXY" Target="TRUST_PROXY" Default="false" Mode="" Description="Set to true when running behind a reverse proxy or Cloudflare Tunnel — enables ProxyFix and Secure cookie flag" Type="Variable" Display="always" Required="false" Mask="false">false</Config>
 </Container>

@@ -25,11 +25,18 @@ Only user-created policies are shown. System-generated default policies are hidd
 | Component | Requirement |
 |-----------|-------------|
 | UniFi OS | 3.x+ |
-| UniFi Network app | 8.x+ (firmware 10.x on UCG) |
-| API | `firewall-policies` (zone-based, v2) |
+| UniFi Network app | 10.1.84+ |
+| API | Official UniFi Local API (`integration/v1`) |
 | Hardware tested | UCG-Max |
 
-This app targets the **zone-based firewall** introduced in UniFi Network 8.x. It uses the `GET/PUT /proxy/network/v2/api/site/default/firewall-policies` API. It will **not** work with the legacy traffic rules or pre-zone-based firewall setups.
+This app targets the **zone-based firewall** and uses the official UniFi Local API, authenticated via API key. It will **not** work with the legacy traffic rules or pre-zone-based firewall setups.
+
+---
+
+## Known Limitations
+
+- **Guest / Hotspot zone policies** are not returned by the UniFi integration API and cannot be managed here. This is a gap in the UniFi API — the zone is recognized but its policies are excluded from the `/firewall/policies` endpoint.
+- **Pre-zone-based policies** (created before migrating to zone-based firewalls) have no integration API ID and cannot be toggled. Recreating them as zone-based firewall policies in the UniFi UI resolves this.
 
 ---
 
@@ -43,8 +50,7 @@ docker run -d \
   --restart unless-stopped \
   -p 5055:5055 \
   -e UNIFI_URL=https://your-unifi.url \
-  -e UNIFI_USERNAME=your-unifi-username \
-  -e UNIFI_PASSWORD=your-unifi-password \
+  -e UNIFI_API_KEY=your-unifi-api-key \
   -e APP_PASSWORD=your-app-password \
   -e SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))") \
   ghcr.io/emptyfish/unifi-switchboard:latest
@@ -62,8 +68,7 @@ cp .env.example .env
 
 ```env
 UNIFI_URL=https://your-unifi.url
-UNIFI_USERNAME=your-unifi-username
-UNIFI_PASSWORD=your-unifi-password
+UNIFI_API_KEY=your-unifi-api-key
 APP_PASSWORD=your-app-password
 SECRET_KEY=  # generate: python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
@@ -83,12 +88,10 @@ All configuration is via environment variables — no config files.
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `UNIFI_URL` | Yes | Base URL of your UniFi controller, e.g. `https://192.168.1.1` |
-| `UNIFI_USERNAME` | Yes | UniFi admin username |
-| `UNIFI_PASSWORD` | Yes | UniFi admin password (min 8 chars) |
+| `UNIFI_API_KEY` | Yes | Local UniFi API key. Generate in Network → Integrations → API Keys |
 | `APP_PASSWORD` | Yes | Password to log into this web UI (min 8 chars) |
 | `SECRET_KEY` | Yes | Random string for session encryption (min 32 chars) |
 | `UNIFI_SITE` | No | UniFi site name (default: `default`). Change if you use multiple sites or a custom site name |
-| `UNIFI_API_KEY` | No | Local UniFi API key — enables correct rule evaluation order. Generate in Network → Integrations → API Keys |
 | `TRUST_PROXY` | No | Set `true` when running behind Cloudflare Tunnel or a reverse proxy — enables `ProxyFix` and the `Secure` cookie flag |
 
 ---

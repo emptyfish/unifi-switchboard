@@ -38,15 +38,13 @@ def _validate_url(val):
         return False
 
 
-TRUST_PROXY    = os.environ.get("TRUST_PROXY", "").lower() in ("1", "true", "yes")
+TRUST_PROXY   = os.environ.get("TRUST_PROXY", "").lower() in ("1", "true", "yes")
 
-UNIFI_URL      = _require_env("UNIFI_URL")
-UNIFI_SITE     = os.environ.get("UNIFI_SITE", "default").strip() or "default"
-UNIFI_API_KEY  = os.environ.get("UNIFI_API_KEY", "").strip()
-UNIFI_USERNAME = _require_env("UNIFI_USERNAME")
-UNIFI_PASSWORD = _require_env("UNIFI_PASSWORD", min_length=8)
-APP_PASSWORD   = _require_env("APP_PASSWORD", min_length=8)
-SECRET_KEY     = _require_env("SECRET_KEY", min_length=32)
+UNIFI_URL     = _require_env("UNIFI_URL")
+UNIFI_SITE    = os.environ.get("UNIFI_SITE", "default").strip() or "default"
+UNIFI_API_KEY = _require_env("UNIFI_API_KEY")
+APP_PASSWORD  = _require_env("APP_PASSWORD", min_length=8)
+SECRET_KEY    = _require_env("SECRET_KEY", min_length=32)
 
 if not _validate_url(UNIFI_URL):
     raise RuntimeError("UNIFI_URL must be a valid http/https URL")
@@ -70,23 +68,9 @@ limiter = Limiter(
     storage_uri="memory://",
 )
 
-_POLICY_ID_RE = re.compile(r"^[a-f0-9]{24,64}$")
-
-
-def get_unifi_session():
-    s = requests.Session()
-    s.verify = False
-    r = s.post(
-        f"{UNIFI_URL}/api/auth/login",
-        json={"username": UNIFI_USERNAME, "password": UNIFI_PASSWORD},
-        timeout=10,
-    )
-    r.raise_for_status()
-    csrf = r.headers.get("X-Csrf-Token", "")
-    if csrf:
-        s.headers.update({"X-CSRF-Token": csrf})
-    return s
-
+_POLICY_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
 
 _DAY_ORDER  = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 _DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -103,7 +87,9 @@ def _format_schedule(schedule):
     mode = schedule.get("mode", "ALWAYS")
     if mode == "ALWAYS":
         return "always"
-    days = [d for d in _DAY_ORDER if d in schedule.get("repeat_on_days", [])]
+    # Accept both snake_case and camelCase keys defensively
+    days_raw = schedule.get("repeat_on_days") or schedule.get("repeatOnDays") or []
+    days = [d for d in _DAY_ORDER if d in days_raw]
     if not days:
         return mode.lower()
     indices = [_DAY_ORDER.index(d) for d in days]
@@ -111,40 +97,30 @@ def _format_schedule(schedule):
     day_str = (f"{_DAY_LABELS[indices[0]]}–{_DAY_LABELS[indices[-1]]}"
                if consecutive and len(days) > 1
                else ", ".join(_DAY_LABELS[i] for i in indices))
-    start = schedule.get("time_range_start")
-    end   = schedule.get("time_range_end")
-    if start and end and not schedule.get("time_all_day"):
+    start = schedule.get("time_range_start") or schedule.get("timeRangeStart")
+    end   = schedule.get("time_range_end") or schedule.get("timeRangeEnd")
+    time_all_day = schedule.get("time_all_day") or schedule.get("timeAllDay")
+    if start and end and not time_all_day:
         return f"{day_str} {_fmt_time(start)}–{_fmt_time(end)}"
     return day_str
 
 
-def get_firewall_policies(s):
-    r = s.get(f"{UNIFI_URL}/proxy/network/v2/api/site/{UNIFI_SITE}/firewall-policies", timeout=10)
-    r.raise_for_status()
-    return r.json()
-
-
-def _fetch_json(s, path):
-    r = s.get(f"{UNIFI_URL}{path}", timeout=10)
-    r.raise_for_status()
-    data = r.json()
-    return data.get("data", data) if isinstance(data, dict) and "data" in data else data
-
-
-def _integration_get(path):
-    r = requests.get(
+def _integration_request(method, path, **kwargs):
+    r = requests.request(
+        method,
         f"{UNIFI_URL}/proxy/network/integration/v1{path}",
         headers={"X-API-Key": UNIFI_API_KEY, "Accept": "application/json"},
         verify=False,
         timeout=10,
+        **kwargs,
     )
     r.raise_for_status()
     data = r.json()
     return data.get("data", data) if isinstance(data, dict) and "data" in data else data
 
 
-def _get_integration_site_id():
-    sites = _integration_get("/sites")
+def _get_site_id():
+    sites = _integration_request("GET", "/sites")
     if not isinstance(sites, list):
         return None
     for site in sites:
@@ -156,149 +132,57 @@ def _get_integration_site_id():
     return None
 
 
-def _build_v2_to_integration_zone_map(s, site_id):
-    """Returns {v2_zone_hex_id: integration_zone_uuid}."""
+def get_firewall_policies(site_id):
+    return _integration_request("GET", f"/sites/{site_id}/firewall/policies")
+
+
+def get_zone_names(site_id):
     try:
-        nc_entries = _fetch_json(s, f"/proxy/network/api/s/{UNIFI_SITE}/rest/networkconf")
-        int_zones = _integration_get(f"/sites/{site_id}/firewall/zones")
-        int_networks = _integration_get(f"/sites/{site_id}/networks")
+        zones = _integration_request("GET", f"/sites/{site_id}/firewall/zones")
+        return {z["id"]: z["name"] for z in zones if "id" in z and "name" in z}
     except Exception as exc:
-        log.warning("zone map: %s", exc)
-        return {}
-
-    int_net_name_to_zone = {n["name"]: n.get("zoneId") for n in int_networks if "name" in n}
-    int_zone_name_to_uuid = {z["name"]: z["id"] for z in int_zones if "name" in z and "id" in z}
-
-    nc_by_zone: dict[str, list] = {}
-    for nc in nc_entries:
-        v2_zid = nc.get("firewall_zone_id")
-        if v2_zid:
-            nc_by_zone.setdefault(v2_zid, []).append(nc)
-
-    result = {}
-    for v2_zid, nets in nc_by_zone.items():
-        if all(n.get("purpose") == "wan" for n in nets):
-            uuid = int_zone_name_to_uuid.get("External")
-            if uuid:
-                result[v2_zid] = uuid
-        else:
-            for nc in nets:
-                uuid = int_net_name_to_zone.get(nc.get("name", ""))
-                if uuid:
-                    result[v2_zid] = uuid
-                    break
-    return result
-
-
-def get_policy_ordering(v2_policies, zone_pairs, s):
-    """Returns {v2_policy_id: position} for display-order sorting.
-
-    Calls the integration API ordering endpoint per zone pair using correct
-    integration zone UUIDs. Policies without an integration ID (nulls in the
-    ordering response) fall back to their index value in the sort key, which
-    keeps them after explicitly-positioned policies since index starts at 10000+.
-    """
-    if not UNIFI_API_KEY or not zone_pairs:
-        return {}
-    try:
-        site_id = _get_integration_site_id()
-        if not site_id:
-            return {}
-
-        zone_map = _build_v2_to_integration_zone_map(s, site_id)
-
-        # Build integration policy UUID → v2 _id via policy name matching
-        try:
-            int_policies = _integration_get(f"/sites/{site_id}/firewall/policies")
-        except Exception as exc:
-            log.warning("integration policies fetch failed: %s", exc)
-            int_policies = []
-        int_name_to_uuid = {
-            p["name"]: p["id"]
-            for p in (int_policies if isinstance(int_policies, list) else [])
-            if p.get("name") and p.get("id")
-        }
-        int_uuid_to_v2_id = {
-            int_uuid: p["_id"]
-            for p in v2_policies
-            if p.get("name") and p.get("_id")
-            for int_uuid in [int_name_to_uuid.get(p["name"])]
-            if int_uuid
-        }
-
-        ordering = {}
-        for src_v2, dst_v2 in zone_pairs:
-            int_src = zone_map.get(src_v2)
-            int_dst = zone_map.get(dst_v2)
-            if not int_src or not int_dst:
-                log.warning("no integration zone UUID for v2 pair %s->%s", src_v2, dst_v2)
-                continue
-            try:
-                data = _integration_get(
-                    f"/sites/{site_id}/firewall/policies/ordering"
-                    f"?sourceFirewallZoneId={int_src}&destinationFirewallZoneId={int_dst}"
-                )
-                if isinstance(data, dict) and "orderedFirewallPolicyIds" in data:
-                    ordered = data["orderedFirewallPolicyIds"]
-                    ids_in_order = (
-                        (ordered.get("beforeSystemDefined") or []) +
-                        (ordered.get("afterSystemDefined") or [])
-                    )
-                    for pos, int_pid in enumerate(ids_in_order):
-                        if int_pid is not None:
-                            v2_id = int_uuid_to_v2_id.get(int_pid)
-                            if v2_id:
-                                ordering[v2_id] = pos
-                elif isinstance(data, list):
-                    for pos, item in enumerate(data):
-                        pid = item if isinstance(item, str) else (
-                            item.get("id") or item.get("_id") if isinstance(item, dict) else None
-                        )
-                        if pid:
-                            v2_id = int_uuid_to_v2_id.get(pid, pid)
-                            ordering[v2_id] = pos
-            except Exception as exc:
-                log.warning("ordering fetch failed for %s->%s: %s", int_src, int_dst, exc)
-        return ordering
-    except Exception as exc:
-        log.warning("policy ordering failed: %s", exc)
+        log.warning("zone names fetch failed: %s", exc)
         return {}
 
 
-def get_zone_names(s, _policies=None):
-    try:
-        entries = _fetch_json(s, f"/proxy/network/api/s/{UNIFI_SITE}/rest/networkconf")
-    except Exception as exc:
-        log.warning("networkconf failed: %s", exc)
-        return {}
-
-    zone_groups: dict[str, list] = {}
-    for e in entries:
-        zid = e.get("firewall_zone_id")
-        if zid and e.get("name"):
-            zone_groups.setdefault(zid, []).append(e)
-
-    result = {}
-    for zid, nets in zone_groups.items():
-        if all(n.get("purpose") == "wan" for n in nets):
-            result[zid] = "WAN"
-        else:
-            result[zid] = "/".join(n["name"] for n in nets if n.get("name"))
-    return result
-
-
-def set_policy_enabled(s, policy_id, enabled):
-    policies = get_firewall_policies(s)
-    policy = next((p for p in policies if p.get("_id") == policy_id), None)
+def set_policy_enabled(site_id, policy_id, enabled):
+    policy = _integration_request("GET", f"/sites/{site_id}/firewall/policies/{policy_id}")
     if not policy:
         raise ValueError("Policy not found")
     policy["enabled"] = enabled
-    r = s.put(
-        f"{UNIFI_URL}/proxy/network/v2/api/site/{UNIFI_SITE}/firewall-policies/{policy_id}",
-        json=policy,
-        timeout=10,
-    )
-    r.raise_for_status()
+    _integration_request("PUT", f"/sites/{site_id}/firewall/policies/{policy_id}", json=policy)
+
+
+def get_policy_ordering(zone_pairs, site_id):
+    if not zone_pairs:
+        return {}
+    ordering = {}
+    for src_zid, dst_zid in zone_pairs:
+        try:
+            data = _integration_request(
+                "GET",
+                f"/sites/{site_id}/firewall/policies/ordering"
+                f"?sourceFirewallZoneId={src_zid}&destinationFirewallZoneId={dst_zid}"
+            )
+            if isinstance(data, dict) and "orderedFirewallPolicyIds" in data:
+                ordered = data["orderedFirewallPolicyIds"]
+                ids_in_order = (
+                    (ordered.get("beforeSystemDefined") or []) +
+                    (ordered.get("afterSystemDefined") or [])
+                )
+                for pos, pid in enumerate(ids_in_order):
+                    if pid is not None:
+                        ordering[pid] = pos
+            elif isinstance(data, list):
+                for pos, item in enumerate(data):
+                    pid = item if isinstance(item, str) else (
+                        item.get("id") if isinstance(item, dict) else None
+                    )
+                    if pid:
+                        ordering[pid] = pos
+        except Exception as exc:
+            log.warning("ordering fetch failed for %s->%s: %s", src_zid, dst_zid, exc)
+    return ordering
 
 
 def login_required(f):
@@ -370,24 +254,28 @@ def index():
 @limiter.limit("60 per minute")
 def api_rules():
     try:
-        s = get_unifi_session()
-        policies = get_firewall_policies(s)
-        zones = get_zone_names(s)
+        site_id = _get_site_id()
+        if not site_id:
+            return jsonify({"ok": False, "error": "Could not resolve UniFi site"}), 500
+
+        policies = get_firewall_policies(site_id)
+        zones = get_zone_names(site_id)
 
         group_order = []
         group_map = {}
         seen_ids = set()
 
         for p in policies:
-            if p.get("predefined") is not False:
+            if p.get("metadata", {}).get("origin") == "SYSTEM_DEFINED":
                 continue
-            pid = p.get("_id")
-            if pid in seen_ids:
+            pid = p.get("id")
+            if pid and pid in seen_ids:
                 continue
-            seen_ids.add(pid)
+            if pid:
+                seen_ids.add(pid)
 
-            src_zone_id = p.get("source", {}).get("zone_id", "")
-            dst_zone_id = p.get("destination", {}).get("zone_id", "")
+            src_zone_id = p.get("source", {}).get("zoneId", "")
+            dst_zone_id = p.get("destination", {}).get("zoneId", "")
             key = (src_zone_id, dst_zone_id)
 
             src_name = zones.get(src_zone_id) or (src_zone_id[-4:] if src_zone_id else "")
@@ -403,12 +291,12 @@ def api_rules():
                 "description": p.get("name", "Unnamed Policy"),
                 "tooltip": p.get("description", ""),
                 "enabled": p.get("enabled", False),
-                "action": p.get("action", "").capitalize(),
+                "action": p.get("action", {}).get("type", "").capitalize(),
                 "schedule": _format_schedule(p.get("schedule", {})),
                 "index": p.get("index", 0),
             })
 
-        ordering = get_policy_ordering(policies, group_order, s)
+        ordering = get_policy_ordering(group_order, site_id)
 
         groups = []
         for key in group_order:
@@ -434,8 +322,10 @@ def api_toggle(rule_id):
     try:
         data = request.get_json(silent=True) or {}
         enabled = bool(data.get("enabled", False))
-        s = get_unifi_session()
-        set_policy_enabled(s, rule_id, enabled)
+        site_id = _get_site_id()
+        if not site_id:
+            return jsonify({"ok": False, "error": "Could not resolve UniFi site"}), 500
+        set_policy_enabled(site_id, rule_id, enabled)
         log.info("rule_toggle id=%s enabled=%s addr=%s", rule_id, enabled, request.remote_addr)
         return _no_cache(jsonify({"ok": True, "enabled": enabled}))
     except Exception:
@@ -456,22 +346,22 @@ def robots():
 @app.route("/api/debug/raw-policies")
 @login_required
 def api_debug_raw_policies():
-    s = get_unifi_session()
-    policies = get_firewall_policies(s)
-    user_policies = [p for p in policies if p.get("predefined") is False]
-    return _no_cache(jsonify(user_policies))
+    site_id = _get_site_id()
+    policies = get_firewall_policies(site_id)
+    return _no_cache(jsonify(policies))
 
 
 @app.route("/api/debug/zones")
 @login_required
 def api_debug_zones():
-    s = get_unifi_session()
+    site_id = _get_site_id()
     results = {}
     for path in [
-        f"/proxy/network/api/s/{UNIFI_SITE}/rest/networkconf",
+        f"/sites/{site_id}/firewall/zones",
+        f"/sites/{site_id}/networks",
     ]:
         try:
-            results[path] = _fetch_json(s, path)
+            results[path] = _integration_request("GET", path)
         except Exception as exc:
             results[path] = {"error": str(exc)}
     return _no_cache(jsonify(results))
@@ -481,66 +371,38 @@ def api_debug_zones():
 @login_required
 def api_debug_policy_ordering():
     results = {}
+    try:
+        site_id = _get_site_id()
+        results["resolved_site_id"] = site_id
+        if site_id:
+            policies = get_firewall_policies(site_id)
+            zones = get_zone_names(site_id)
 
-    if UNIFI_API_KEY:
-        try:
-            s = get_unifi_session()
-            site_id = _get_integration_site_id()
-            results["resolved_site_id"] = site_id
-            if site_id:
-                policies = get_firewall_policies(s)
-                seen: set = set()
-                zone_pairs = []
-                for p in policies:
-                    if p.get("predefined") is not False:
-                        continue
-                    src = p.get("source", {}).get("zone_id", "")
-                    dst = p.get("destination", {}).get("zone_id", "")
-                    if src and dst and (src, dst) not in seen:
-                        seen.add((src, dst))
-                        zone_pairs.append((src, dst))
+            seen: set = set()
+            zone_pairs = []
+            for p in policies:
+                src = p.get("source", {}).get("zoneId", "")
+                dst = p.get("destination", {}).get("zoneId", "")
+                if src and dst and (src, dst) not in seen:
+                    seen.add((src, dst))
+                    zone_pairs.append((src, dst))
 
-                zone_map = _build_v2_to_integration_zone_map(s, site_id)
-                results["v2_to_integration_zone_map"] = zone_map
-
-                int_zones = _integration_get(f"/sites/{site_id}/firewall/zones")
-                zone_uuid_to_name = {z["id"]: z["name"] for z in int_zones if "id" in z}
-
-                pair_results = {}
-                for src, dst in zone_pairs:
-                    int_src = zone_map.get(src)
-                    int_dst = zone_map.get(dst)
-                    if not int_src or not int_dst:
-                        label = f"{src[-6:]}→{dst[-6:]} (unmapped)"
-                        pair_results[label] = {"error": "zone not in map"}
-                        continue
-                    url = (
-                        f"{UNIFI_URL}/proxy/network/integration/v1/sites/{site_id}"
-                        f"/firewall/policies/ordering"
-                        f"?sourceFirewallZoneId={int_src}&destinationFirewallZoneId={int_dst}"
+            pair_results = {}
+            for src, dst in zone_pairs:
+                src_name = zones.get(src, src[-6:] if src else "?")
+                dst_name = zones.get(dst, dst[-6:] if dst else "?")
+                try:
+                    body = _integration_request(
+                        "GET",
+                        f"/sites/{site_id}/firewall/policies/ordering"
+                        f"?sourceFirewallZoneId={src}&destinationFirewallZoneId={dst}"
                     )
-                    r2 = requests.get(
-                        url,
-                        headers={"X-API-Key": UNIFI_API_KEY, "Accept": "application/json"},
-                        verify=False,
-                        timeout=10,
-                    )
-                    try:
-                        body = r2.json()
-                    except Exception:
-                        body = r2.text
-                    src_name = zone_uuid_to_name.get(int_src, src[-6:])
-                    dst_name = zone_uuid_to_name.get(int_dst, dst[-6:])
-                    pair_results[f"{src_name}→{dst_name}"] = {
-                        "status": r2.status_code,
-                        "body": body,
-                    }
-                results["integration_ordering"] = pair_results
-        except Exception as exc:
-            results["integration_error"] = str(exc)
-    else:
-        results["_api_key"] = "UNIFI_API_KEY not set"
-
+                    pair_results[f"{src_name}→{dst_name}"] = {"body": body}
+                except Exception as exc:
+                    pair_results[f"{src_name}→{dst_name}"] = {"error": str(exc)}
+            results["integration_ordering"] = pair_results
+    except Exception as exc:
+        results["integration_error"] = str(exc)
     return _no_cache(jsonify(results))
 
 

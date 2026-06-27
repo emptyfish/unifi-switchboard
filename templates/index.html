@@ -301,17 +301,21 @@
     }
 
     .toggle.loading .slider { opacity: 0.5; pointer-events: none; }
+    .toggle input:disabled + .slider { opacity: 0.3; pointer-events: none; cursor: default; }
+    .toggle:has(input:disabled) { pointer-events: none; cursor: default; }
 
     .rule-card.updating {
       opacity: 0.6;
       pointer-events: none;
     }
 
-    .rule-card[data-tooltip] {
+    .rule-card[data-tooltip],
+    .toggle-wrap[data-tooltip] {
       position: relative;
     }
 
-    .rule-card[data-tooltip]::after {
+    .rule-card[data-tooltip]::after,
+    .toggle-wrap[data-tooltip]::after {
       content: attr(data-tooltip);
       position: absolute;
       bottom: calc(100% + 6px);
@@ -334,7 +338,8 @@
       z-index: 10;
     }
 
-    .rule-card[data-tooltip]:hover::after {
+    .rule-card[data-tooltip]:hover::after,
+    .toggle-wrap[data-tooltip]:hover::after {
       opacity: 1;
     }
 
@@ -367,6 +372,24 @@
       padding: 1rem 1.25rem;
       color: var(--red);
       font-size: 0.8rem;
+    }
+
+    .legacy-note {
+      margin-top: 1.5rem;
+      padding: 0.75rem 1rem;
+      border-radius: 4px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--subtext);
+      font-size: 0.75rem;
+      line-height: 1.5;
+    }
+
+    .api-note {
+      margin-top: 2rem;
+      color: var(--subtext);
+      font-size: 0.7rem;
+      text-align: center;
     }
 
     .toast {
@@ -558,6 +581,7 @@
       <div class="skeleton" style="animation-delay:.07s"></div>
       <div class="skeleton" style="animation-delay:.14s"></div>
     </div>
+    <p class="api-note">Guest / Hotspot zone policies are not returned by the UniFi API and cannot be managed here.</p>
   </main>
 
   <div class="toast" id="toast"></div>
@@ -702,7 +726,11 @@
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.checked = rule.enabled;
-      checkbox.addEventListener('change', () => toggle(rule.id, checkbox));
+      if (rule.id) {
+        checkbox.addEventListener('change', () => toggle(rule.id, checkbox));
+      } else {
+        checkbox.disabled = true;
+      }
 
       const slider = document.createElement('span');
       slider.className = 'slider';
@@ -715,6 +743,7 @@
 
       const wrap = document.createElement('div');
       wrap.className = 'toggle-wrap';
+      if (!rule.id) wrap.dataset.tooltip = 'Created before zone-based firewalls — recreate in UniFi to enable toggling';
       wrap.appendChild(lbl);
       wrap.appendChild(togLabel);
 
@@ -739,6 +768,7 @@
         container.innerHTML = '';
 
         let animIdx = 0;
+        let hasLegacy = false;
         data.groups.forEach(group => {
           const header = document.createElement('div');
           header.className = 'zone-group-header';
@@ -747,9 +777,17 @@
 
           group.rules.forEach((rule, pos) => {
             container.appendChild(buildRuleCard(rule, pos + 1, animIdx));
+            if (!rule.id) hasLegacy = true;
             animIdx++;
           });
         });
+
+        if (hasLegacy) {
+          const note = document.createElement('div');
+          note.className = 'legacy-note';
+          note.textContent = 'Some policies were created before zone-based firewalls and cannot be toggled here. Recreate them as zone-based firewall policies in the UniFi UI to enable control.';
+          container.appendChild(note);
+        }
       } catch (e) {
         setStatus(false, 'Error');
         const errEl = document.createElement('div');
