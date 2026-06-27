@@ -149,7 +149,7 @@ def get_zone_names(site_id):
         return {}
 
 
-_PUT_STRIP_FIELDS = {"metadata", "loggingEnabled"}
+_PUT_STRIP_FIELDS = {"id", "metadata", "loggingEnabled"}
 
 def set_policy_enabled(site_id, policy_id, enabled):
     policy = _integration_request("GET", f"/sites/{site_id}/firewall/policies/{policy_id}")
